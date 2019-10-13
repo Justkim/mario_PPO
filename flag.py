@@ -1,0 +1,2 @@
+DEBUG=False
+SHOW_GAME=True
