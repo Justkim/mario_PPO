@@ -1,2 +1,3 @@
-DEBUG=False
+DEBUG=True
 SHOW_GAME=True
+LOAD=True

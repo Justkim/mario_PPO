@@ -39,6 +39,7 @@ class Model(tf.keras.Model):
         observations=np.expand_dims(input_observations,0)
         print(observations.shape)
         policy,predicted_value=self.forward_pass(observations)
+        print("VALUE_TRAIN",predicted_value)
         self.dist = tf.compat.v1.distributions.Categorical(logits=policy)
         action = self.dist.sample()
         return action,predicted_value
