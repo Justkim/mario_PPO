@@ -8,11 +8,12 @@ import datetime
 
 
 class Runner():
-    def __init__(self,num_steps,env,discount_factor):
-        self.num_steps=num_steps
+    def __init__(self,num_steps,env,discount_factor,lam):
+        self.num_stemaips=num_steps
         self.env=env
         self.current_observation = self.env.reset()
         self.discount_factor=discount_factor
+        self.lam=lam
 
     def run(self,model):
         rewards = []
@@ -40,16 +41,26 @@ class Runner():
 
     def compute_advantage(self,rewards,values,dones):
         advantages = []
-        for step in range(self.num_steps):
+        last_advantage=0
+        for step in reversed(range(self.num_steps)):
             if dones[step] or step==(self.num_steps-1):
                 advantages.append(rewards[step] - values[step])
             else:
-                advantages.append(rewards[step] + self.discount_factor * values[step + 1] - values[step])
+                if flag.USE_GAE:
+                    delta=rewards[step] + self.discount_factor * values[step + 1] - values[step]
+                    advantage= last_advantage = delta + self.discount_factor * self.lam * last_advantage
+                    advantages.append(advantage)
+                else:
+                    advantages.append(rewards[step] + self.discount_factor * values[step + 1] - values[step])
+        if flag.USE_GAE:
+            advantages.reverse()
         return advantages
 
 
 class Trainer():
-    def __init__(self,num_training_steps,num_game_steps,num_epoch,batch_size,learning_rate,discount_factor,env,num_action,value_coef,clip_range):
+    def __init__(self,num_training_steps,num_game_steps,num_epoch,
+                 batch_size,learning_rate,discount_factor,env,num_action,
+                 value_coef,clip_range,save_interval,entropy_coef,lam):
         self.env=env
         self.training_steps=num_training_steps
         self.num_epoch=num_epoch
@@ -62,6 +73,7 @@ class Trainer():
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
         self.negative_log_p_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         self.old_negative_log_p = 0# make this right for the first run
+        self.old_values=0
         self.clip_range=clip_range
         self.value_coef=value_coef
         self.loss_avg = tf.keras.metrics.Mean()
@@ -69,16 +81,18 @@ class Trainer():
         self.value_loss_avg = tf.keras.metrics.Mean()
         assert self.num_game_steps % self.batch_size == 0
         self.batch_num=int(self.num_game_steps / self.batch_size)
-        self.first_neg_log=True
+        self.first_train=True
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = 'logs/gradient_tape/' + self.current_time + '/train'
         self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-        self.save_interval=10
+        self.save_interval=save_interval
+        self.entropy_coef=entropy_coef
+        self.lam=lam
 
 
     def collect_experiance_and_train(self):
 
-        train_runner=Runner(num_steps=self.num_game_steps,env=self.env,discount_factor=self.discount_factor)
+        train_runner=Runner(num_steps=self.num_game_steps,env=self.env,discount_factor=self.discount_factor,lam=self.lam)
         if flag.LOAD:
             self.new_model.load_weights('20191013-164732') #check this put
             print("loaded model weigths from checkpoint")
@@ -142,7 +156,14 @@ class Trainer():
             print("policy",policy)
             print("predicted value",predicted_value)
 
+            #  clipped_vf= old_value + tf.clip_by_value(train_model.vf - old_value , -clip_range , clip_range)
+        clipped_value=self.old_values+tf.clip_by_value(predicted_value - self.old_values,-self.clip_range,self.clip_range)
+        clipped_value_loss=tf.losses.mse(clipped_value,tf.cast(rewards,dtype="float32"))
         value_loss = tf.losses.mse(predicted_value,tf.cast(rewards,dtype="float32"))
+        if not self.first_train:
+            value_loss=tf.reduce_mean(tf.maximum(value_loss,clipped_value_loss))
+        else:
+            value_loss=tf.reduce_mean(value_loss)
         if flag.DEBUG:
             print("value_loss",value_loss)
 
@@ -150,7 +171,7 @@ class Trainer():
         if flag.DEBUG:
             print("negative_log", negative_log_p)
 
-        if self.first_neg_log:
+        if self.first_train:
             ratio=tf.cast(1,dtype="float32")
         else:
             ratio = tf.exp(self.old_negative_log_p - negative_log_p)
@@ -167,8 +188,11 @@ class Trainer():
         if flag.DEBUG:
             print("clipped_policy_loss",clipped_policy_loss)
         selected_policy_loss = tf.reduce_mean(tf.maximum(policy_loss, clipped_policy_loss))
+        entropy = self.new_model.dist.entropy()
+        value_coef_tensor=tf.convert_to_tensor(self.value_coef, dtype="float32")
+        entropy_coef_tensor=tf.convert_to_tensor(self.value_coef,dtype="float32")
 
-        loss = selected_policy_loss + tf.convert_to_tensor(self.value_coef,dtype="float32") * value_loss
+        loss = selected_policy_loss +  (value_coef_tensor* value_loss) - (entropy_coef_tensor  * entropy)
         if flag.DEBUG:
             print("selected_policy_loss",selected_policy_loss)
             print("LOOSSS",loss)
@@ -176,7 +200,6 @@ class Trainer():
 
     def grad(self,observations, actions, rewards, advantages):
         with tf.GradientTape() as tape:
-
             loss,policy_loss,value_loss = self.compute_loss(observations, rewards, actions, advantages)
         return loss,policy_loss,value_loss, tape.gradient(loss, self.new_model.trainable_variables)
 
