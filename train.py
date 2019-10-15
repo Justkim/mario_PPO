@@ -27,15 +27,20 @@ class Runner():
 
             actions.append(predicted_action[0]) #check this for multiple envs version
             values.append(value[0])
-            observation, reward, done, info = self.env.step(predicted_action)
+            if flag.MARIO_ENV:
+                observation, reward, done, info = self.env.step(predicted_action[0])
+            else:
+                observation, reward, done, info = self.env.step(predicted_action)
             if flag.SHOW_GAME:
                 self.env.render()
             self.current_observation = observation
             observations.append(self.current_observation)
             rewards.append(reward)
             dones.append(done)
+
             if done:
                 self.current_observation = self.env.reset()
+                print("Done")
 
 
         advantages=self.compute_advantage(rewards, values, dones)
@@ -82,10 +87,6 @@ class Trainer():
         self.new_model = Model(num_action,self.batch_size,self.value_coef,self.entropy_coef,self.clip_range)
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
 
-        self.loss_avg = tf.keras.metrics.Mean()
-        self.policy_loss_avg = tf.keras.metrics.Mean()
-        self.value_loss_avg = tf.keras.metrics.Mean()
-        self.avg_entropy=tf.keras.metrics.Mean()
         assert self.num_game_steps % self.batch_size == 0
         self.batch_num=int(self.num_game_steps / self.batch_size)
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -109,6 +110,11 @@ class Trainer():
             actions = []
             values = []
             observations, rewards, actions, values, advantages, dones=train_runner.run(self.new_model)
+
+            self.loss_avg = tf.keras.metrics.Mean()
+            self.policy_loss_avg = tf.keras.metrics.Mean()
+            self.value_loss_avg = tf.keras.metrics.Mean()
+            self.avg_entropy = tf.keras.metrics.Mean()
 
             experiance = list(zip(observations,rewards,actions,values,advantages,dones))
             random.shuffle(experiance)
@@ -145,7 +151,7 @@ class Trainer():
 
 
     def train_model(self,observations,rewards,actions,values,advantages,dones):
-
+            print("observations shape",len(observations))
             observations_array = np.array(observations)
             rewards_array = np.array(rewards)
             actions_array = np.array(actions)
