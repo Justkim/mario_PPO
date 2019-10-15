@@ -9,12 +9,13 @@ class processObservation(gym.Wrapper):
     def __init__(self,env,requested_obs_shape):
         super(processObservation,self).__init__(env)
         self.requested_obs_shape=requested_obs_shape
-        self.frame_deque = deque([np.zeros(requested_obs_shape), np.zeros(requested_obs_shape),np.zeros(requested_obs_shape),np.zeros(requested_obs_shape)],maxlen=4)
+        self.frame_deque = deque([np.zeros(requested_obs_shape),np.zeros(requested_obs_shape)],maxlen=2)
     def step(self,action):
 
         obs,rew,done,info= self.env.step(action)
         obs=self.preprocess(obs)
         obs=self.stack_frames(obs)
+        rew=rew-0.1
         return obs,rew,done,info
 
     def reset(self):
@@ -48,6 +49,12 @@ class processObservation(gym.Wrapper):
 # env=gym.make('MiniGrid-Empty-5x5-v0')
 # env=gym_minigrid.wrappers.RGBImgObsWrapper(env)#attention: I changed render parameters in weappers file to make this work
 # env=processObservation(env,(86,86))
+# while True:
+#     env.render()
+#     x=int(input())
+#     obs,rew,done,info=env.step(x)
+#     print(rew)
+#     print(done)
 # observation=env.reset()
 # # print(env.action_space)
 # # print(env.observation_space)

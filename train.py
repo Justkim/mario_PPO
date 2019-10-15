@@ -151,7 +151,7 @@ class Trainer():
 
 
     def train_model(self,observations,rewards,actions,values,advantages,dones):
-            print("observations shape",len(observations))
+            #print("observations shape",len(observations))
             observations_array = np.array(observations)
             rewards_array = np.array(rewards)
             actions_array = np.array(actions)
