@@ -49,13 +49,14 @@ class processObservation(gym.Wrapper):
 # env=gym_minigrid.wrappers.RGBImgObsWrapper(env)#attention: I changed render parameters in weappers file to make this work
 # env=processObservation(env,(86,86))
 # observation=env.reset()
-# print(env.action_space)
-# print(env.observation_space)
-# obs=env.reset()
-# print(obs.shape)
-# #
+# # print(env.action_space)
+# # print(env.observation_space)
+# # obs=env.reset()
+# # print(obs.shape)
+# # #
 # for i in range(4):
-#     observation, reward, done, info=env.step(1)
+#     observation, reward, done, info=env.step(0)
+#     print(info)
 
 
 

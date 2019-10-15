@@ -1,4 +1,4 @@
 DEBUG=True
 SHOW_GAME=True
-LOAD=True
+LOAD=False
 USE_GAE=True

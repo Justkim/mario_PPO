@@ -9,7 +9,7 @@ import datetime
 
 class Runner():
     def __init__(self,num_steps,env,discount_factor,lam):
-        self.num_stemaips=num_steps
+        self.num_steps=num_steps
         self.env=env
         self.current_observation = self.env.reset()
         self.discount_factor=discount_factor
@@ -22,7 +22,7 @@ class Runner():
         actions=[]
         values=[]
         for j in range(self.num_steps):
-
+            observations.append(self.current_observation)
             predicted_action, value = model.step(self.current_observation)
             actions.append(predicted_action[0]) #check this for multiple envs version
             values.append(value)
@@ -30,7 +30,7 @@ class Runner():
             if flag.SHOW_GAME:
                 self.env.render()
             self.current_observation = observation
-            observations.append(observation)
+            observations.append(self.current_observation)
             rewards.append(reward)
             dones.append(done)
             if done:
@@ -52,6 +52,7 @@ class Runner():
                     advantages.append(advantage)
                 else:
                     advantages.append(rewards[step] + self.discount_factor * values[step + 1] - values[step])
+
         if flag.USE_GAE:
             advantages.reverse()
         return advantages
@@ -69,7 +70,7 @@ class Trainer():
         self.discount_factor=discount_factor
         self.num_game_steps=num_game_steps
         self.batch_size = batch_size
-        self.new_model = Model(num_action)
+        self.new_model = Model(num_action,self.batch_size)
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
         self.negative_log_p_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         self.old_negative_log_p = 0# make this right for the first run
@@ -79,6 +80,7 @@ class Trainer():
         self.loss_avg = tf.keras.metrics.Mean()
         self.policy_loss_avg = tf.keras.metrics.Mean()
         self.value_loss_avg = tf.keras.metrics.Mean()
+        self.avg_entropy=tf.keras.metrics.Mean()
         assert self.num_game_steps % self.batch_size == 0
         self.batch_num=int(self.num_game_steps / self.batch_size)
         self.first_train=True
@@ -91,7 +93,6 @@ class Trainer():
 
 
     def collect_experiance_and_train(self):
-
         train_runner=Runner(num_steps=self.num_game_steps,env=self.env,discount_factor=self.discount_factor,lam=self.lam)
         if flag.LOAD:
             self.new_model.load_weights('20191013-164732') #check this put
@@ -112,14 +113,24 @@ class Trainer():
                     start_index=n*self.batch_size
                     experiance_slice=experiance[start_index:start_index+self.batch_size]
                     observations, rewards, actions,values,advantages, dones = zip(*experiance_slice)
-                    loss,policy_loss,value_loss=self.train_model(observations,rewards,actions,values,advantages,dones)
+                    #print("SEEEE HERE",observations[0].shape)
+                    loss,policy_loss,value_loss,entropy=self.train_model(observations,rewards,actions,values,advantages,dones)
                     self.loss_avg(loss)
                     self.policy_loss_avg(policy_loss)
                     self.value_loss_avg(value_loss)
+                    self.avg_entropy(entropy)
+                loss_avg_result=self.loss_avg.result()
+                policy_loss_avg_result=self.policy_loss_avg.result()
+                value_loss_avg_result=self.value_loss_avg.result()
+                entropy_avg_result=self.avg_entropy.result()
+                print("loss_avg",loss_avg_result)
+                print("policy_avg",policy_loss_avg_result)
+                print("value_loss_avg",value_loss_avg_result)
+                print("entropy_avg",entropy_avg_result)
                 with self.train_summary_writer.as_default():
-                    tf.summary.scalar('loss_avg', self.loss_avg.result(), step=epoch)
-                    tf.summary.scalar('policy_loss_avg', data=self.policy_loss_avg.result(), step=epoch)
-                    tf.summary.scalar('value_loss_avg', data=self.value_loss_avg.result(), step=epoch)
+                    tf.summary.scalar('loss_avg', loss_avg_result, step=epoch)
+                    tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=epoch)
+                    tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=epoch)
                    # tf.summary.scalar('learning rate', data=learning_rate, step=epoch)
                     # add more scalars
 
@@ -128,38 +139,44 @@ class Trainer():
                 self.new_model.save_weights('./models/train'+self.current_time+'/'+'train')
 
 
-
     def train_model(self,observations,rewards,actions,values,advantages,dones):
 
             observations_array = np.array(observations)
             rewards_array = np.array(rewards)
             actions_array = np.array(actions)
             advantages_array=np.array(advantages)
+            values_array=np.array(values)
+
 
             if flag.DEBUG:
                 print("input observations shape", observations_array.shape)
                 print("input rewards shape", rewards_array.shape)
                 print("input actions shape", actions_array.shape)
                 print("input advantages shape", advantages_array.shape)
+
                 print("rewards",rewards)
                 print("advantages",advantages)
-                print("actions",actions)
-            loss,policy_loss,value_loss,grads=self.grad(observations_array, actions_array, rewards_array, advantages_array)
-            self.loss_avg(loss)
+                print("actions2",actions_array)
+                print("values2",values_array)
+            loss,policy_loss,value_loss,entropy,grads=self.grad(observations_array, actions_array, rewards_array, values_array,advantages_array)
             self.optimizer.apply_gradients(zip(grads, self.new_model.trainable_variables))
-            return loss,policy_loss,value_loss
+            return loss,policy_loss,value_loss,entropy
 
 
-    def compute_loss(self, input_observations, rewards, actions, advantages):
-        policy, predicted_value = self.new_model.forward_pass(input_observations)
-        if flag.DEBUG:
-            print("policy",policy)
-            print("predicted value",predicted_value)
+    def compute_loss(self, input_observations, rewards, actions,values, advantages):
+        _,predicted_value=self.new_model.forward_pass(input_observations)
+        print("values1",predicted_value)
+        predicted_value=values
+
+
+        # if flag.DEBUG:
+        #     print("policy",policy)
+        #     print("predicted value",predicted_value)
 
             #  clipped_vf= old_value + tf.clip_by_value(train_model.vf - old_value , -clip_range , clip_range)
         clipped_value=self.old_values+tf.clip_by_value(predicted_value - self.old_values,-self.clip_range,self.clip_range)
-        clipped_value_loss=tf.losses.mse(clipped_value,tf.cast(rewards,dtype="float32"))
-        value_loss = tf.losses.mse(predicted_value,tf.cast(rewards,dtype="float32"))
+        clipped_value_loss=tf.losses.mse(clipped_value,tf.cast(rewards,dtype="float64"))
+        value_loss = tf.losses.mse(predicted_value,tf.cast(rewards,dtype="float64"))
         if not self.first_train:
             value_loss=tf.reduce_mean(tf.maximum(value_loss,clipped_value_loss))
         else:
@@ -172,7 +189,7 @@ class Trainer():
             print("negative_log", negative_log_p)
 
         if self.first_train:
-            ratio=tf.cast(1,dtype="float32")
+            ratio=tf.cast(1,dtype="float64")
         else:
             ratio = tf.exp(self.old_negative_log_p - negative_log_p)
 
@@ -189,19 +206,19 @@ class Trainer():
             print("clipped_policy_loss",clipped_policy_loss)
         selected_policy_loss = tf.reduce_mean(tf.maximum(policy_loss, clipped_policy_loss))
         entropy = self.new_model.dist.entropy()
-        value_coef_tensor=tf.convert_to_tensor(self.value_coef, dtype="float32")
-        entropy_coef_tensor=tf.convert_to_tensor(self.value_coef,dtype="float32")
+        value_coef_tensor=tf.convert_to_tensor(self.value_coef, dtype="float64")
+        entropy_coef_tensor=tf.convert_to_tensor(self.value_coef,dtype="float64")
 
         loss = selected_policy_loss +  (value_coef_tensor* value_loss) - (entropy_coef_tensor  * entropy)
         if flag.DEBUG:
             print("selected_policy_loss",selected_policy_loss)
             print("LOOSSS",loss)
-        return loss,policy_loss,value_loss
+        return loss,policy_loss,value_loss,entropy
 
-    def grad(self,observations, actions, rewards, advantages):
+    def grad(self,observations, actions, rewards,values, advantages):
         with tf.GradientTape() as tape:
-            loss,policy_loss,value_loss = self.compute_loss(observations, rewards, actions, advantages)
-        return loss,policy_loss,value_loss, tape.gradient(loss, self.new_model.trainable_variables)
+            loss,policy_loss,value_loss,entropy = self.compute_loss(observations, rewards, actions, values,advantages)
+        return loss,policy_loss,value_loss,entropy, tape.gradient(loss, self.new_model.trainable_variables)
 
 
 
