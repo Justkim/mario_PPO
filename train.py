@@ -91,7 +91,8 @@ class Trainer():
         self.batch_num=int(self.num_game_steps / self.batch_size)
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = 'logs/gradient_tape/' + self.current_time + '/train'
-        self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+        if flag.TENSORBOARD_AVALAIBLE:
+            self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         self.save_interval=save_interval
 
         self.lam=lam
@@ -137,12 +138,12 @@ class Trainer():
                                                                             policy_loss_avg_result,
                                                                              value_loss_avg_result,
                                                                              entropy_avg_result))
-
-                with self.train_summary_writer.as_default():
-                    tf.summary.scalar('loss_avg', loss_avg_result, step=epoch)
-                    tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=epoch)
-                    tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=epoch)
-                   # tf.summary.scalar('learning rate', data=learning_rate, step=epoch)
+                if flag.TENSORBOARD_AVALAIBLE:
+                    with self.train_summary_writer.as_default():
+                        tf.summary.scalar('loss_avg', loss_avg_result, step=epoch)
+                        tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=epoch)
+                        tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=epoch)
+                       # tf.summary.scalar('learning rate', data=learning_rate, step=epoch)
                     # add more scalars
 
                 self.loss_avg.reset_states()
