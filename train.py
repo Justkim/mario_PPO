@@ -71,6 +71,7 @@ class Trainer():
     def __init__(self,num_training_steps,num_game_steps,num_epoch,
                  batch_size,learning_rate,discount_factor,env,num_action,
                  value_coef,clip_range,save_interval,entropy_coef,lam):
+        tf.enable_eager_execution()
         self.env=env
         self.training_steps=num_training_steps
         self.num_epoch=num_epoch
