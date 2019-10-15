@@ -4,6 +4,7 @@ import mario_env
 import gym
 import gym_minigrid
 import flag
+from play import Player
 
 
 
@@ -24,6 +25,9 @@ if flag.TRAIN:
                         ,discount_factor=0.99,env=env,num_action=7,clip_range=0.1,value_coef=0.5,save_interval=50,
                         entropy_coef=0.02,lam=0.99)
     new_trainer.collect_experiance_and_train()
+elif flag.PLAY:
+    new_player=Player(env=env,load_path='')
+    new_player.play()
 # else:
 #     new_player=Player(env=env)
 #     new_player.play(%cd PPO)

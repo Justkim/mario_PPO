@@ -90,7 +90,7 @@ class Trainer():
         self.value_coef=value_coef
         self.entropy_coef = entropy_coef
 
-        self.new_model = Model(num_action,self.batch_size,self.value_coef,self.entropy_coef,self.clip_range)
+        self.new_model = Model(num_action,self.value_coef,self.entropy_coef,self.clip_range)
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
 
         assert self.num_game_steps % self.batch_size == 0
