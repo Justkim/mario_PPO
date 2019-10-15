@@ -149,7 +149,7 @@ class Trainer():
 
                 self.loss_avg.reset_states()
             if train_step % self.save_interval==0:
-                self.new_model.save_weights('./models/step'+train_step+'-'+self.current_time+'/'+'train')
+                self.new_model.save_weights('./models/step'+str(train_step)+'-'+self.current_time+'/'+'train')
 
 
     def train_model(self,observations,rewards,actions,values,advantages,dones):
