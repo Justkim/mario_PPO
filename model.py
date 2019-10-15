@@ -76,7 +76,7 @@ class Model(tf.keras.Model):
 
         # value_loss = tf.losses.mse(predicted_value, tf.cast(rewards, dtype="float64"))
         value_loss=tf.keras.losses.mse(predicted_value,  tf.cast(rewards, dtype="float64"))
-        if not self.first_train:
+        if not self.first_train and flag.VALUE_CLIP:
             clipped_value = self.old_values + tf.clip_by_value(predicted_value - self.old_values, -self.clip_range,
                                                                self.clip_range)
             clipped_value_loss = tf.losses.mse(clipped_value, tf.cast(rewards, dtype="float64"))
@@ -97,10 +97,10 @@ class Model(tf.keras.Model):
         self.old_negative_log_p = negative_log_p
         self.old_values=predicted_value
 
-        policy_loss = -advantages * ratio
+        policy_loss = advantages * ratio
 
 
-        clipped_policy_loss = -advantages * tf.clip_by_value(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range)
+        clipped_policy_loss = advantages * tf.clip_by_value(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range)
 
 
         selected_policy_loss = -tf.reduce_mean(tf.minimum(policy_loss, clipped_policy_loss))
