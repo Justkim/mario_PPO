@@ -68,8 +68,6 @@ class Runner():
         if flag.USE_GAE:
             advantages.reverse()
 
-
-
         return advantages
 
 
@@ -124,6 +122,7 @@ class Trainer():
             self.value_loss_avg = tf.keras.metrics.Mean()
             self.avg_entropy = tf.keras.metrics.Mean()
 
+
             experiance = list(zip(observations,rewards,actions,values,advantages,dones))
             random.shuffle(experiance)
             for epoch in range(0,self.num_epoch):
@@ -165,7 +164,8 @@ class Trainer():
             actions_array = np.array(actions)
             advantages_array=np.array(advantages)
             values_array=np.array(values)
-
+            if flag.USE_STANDARD_ADV:
+                advantages_array=advantages_array.mean() / (advantages_array.std() + 1e-13)
 
             if flag.DEBUG:
                 print("input observations shape", observations_array.shape)
