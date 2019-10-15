@@ -14,6 +14,8 @@ class Runner():
         self.current_observation = self.env.reset()
         self.discount_factor=discount_factor
         self.lam=lam
+        self.total_steps=0
+
 
     def run(self,model):
         rewards = []
@@ -21,6 +23,7 @@ class Runner():
         dones = []
         actions=[]
         values=[]
+        max_step_exceed=False
         for j in range(self.num_steps):
             observations.append(self.current_observation)
             predicted_action, value = model.step(self.current_observation)
@@ -37,6 +40,9 @@ class Runner():
             observations.append(self.current_observation)
             rewards.append(reward)
             dones.append(done)
+            # self.total_steps+=1
+            # if self.total_steps>=self.max_steps:
+            #     max_step_exceed=True
 
             if done:
                 self.current_observation = self.env.reset()
@@ -71,7 +77,7 @@ class Trainer():
     def __init__(self,num_training_steps,num_game_steps,num_epoch,
                  batch_size,learning_rate,discount_factor,env,num_action,
                  value_coef,clip_range,save_interval,entropy_coef,lam):
-        tf.enable_eager_execution()
+        #tf.enable_eager_execution()
         self.env=env
         self.training_steps=num_training_steps
         self.num_epoch=num_epoch
@@ -95,14 +101,13 @@ class Trainer():
         if flag.TENSORBOARD_AVALAIBLE:
             self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         self.save_interval=save_interval
-
         self.lam=lam
 
 
     def collect_experiance_and_train(self):
         train_runner=Runner(num_steps=self.num_game_steps,env=self.env,discount_factor=self.discount_factor,lam=self.lam)
         if flag.LOAD:
-            self.new_model.load_weights('20191013-164732') #check this put
+            self.new_model.load_weights('./first_train/step800-20191015-132314/train') #check this put
             print("loaded model weigths from checkpoint")
         train_loss = []
         for train_step in range(self.training_steps):
@@ -134,8 +139,8 @@ class Trainer():
                 policy_loss_avg_result=self.policy_loss_avg.result()
                 value_loss_avg_result=self.value_loss_avg.result()
                 entropy_avg_result=self.avg_entropy.result()
-                print("Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(epoch,
-                                                                             loss_avg_result,
+                print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(epoch,
+                                                                             train_step,loss_avg_result,
                                                                             policy_loss_avg_result,
                                                                              value_loss_avg_result,
                                                                              entropy_avg_result))
