@@ -140,8 +140,8 @@ class Trainer():
                 policy_loss_avg_result=self.policy_loss_avg.result()
                 value_loss_avg_result=self.value_loss_avg.result()
                 entropy_avg_result=self.avg_entropy.result()
-                print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(epoch,
-                                                                             train_step,loss_avg_result,
+                print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(train_step,epoch,
+                                                                             loss_avg_result,
                                                                             policy_loss_avg_result,
                                                                              value_loss_avg_result,
                                                                              entropy_avg_result))
