@@ -90,7 +90,7 @@ class Trainer():
 
 
         self.new_model = Model(num_action)
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+        self.optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.learning_rate)
 
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = 'logs/' + self.current_time + '/train'
