@@ -28,6 +28,7 @@ class Model(tf.keras.Model):
 
     def forward_pass(self,input_observations):
        # print(input_observations.shape)
+        input_observations = tf.cast(input_observations, tf.float32)
         x=self.conv1(input_observations)
         x=self.batch_norm1(x)
         x=self.activ1(x)
