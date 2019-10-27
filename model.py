@@ -59,8 +59,8 @@ class Model(tf.keras.Model):
         policy=self.forward_pass(input_observations)
         one_hot_actions=self.make_one_hot(actions,self.num_action)
         self.q = tf.reduce_sum(tf.multiply(policy, one_hot_actions),axis=1)
-        print("self q",self.q)
-        print("target q",target_qs)
+        # print("self q",self.q)
+        # print("target q",target_qs)
         loss=tf.keras.losses.mse(target_qs,self.q)
         return loss
 
