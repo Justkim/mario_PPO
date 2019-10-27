@@ -5,76 +5,78 @@ import tensorflow as tf
 import numpy as np
 import flag
 import datetime
+from collections import deque
+from baselines import logger
 
+from baselines.common.runners import AbstractEnvRunner
 
 class Runner():
-    def __init__(self,num_steps,env,discount_factor,lam):
-        self.num_steps=num_steps
+
+    def __init__(self,env,discount_factor,memory,decay_rate,num_steps):
+        self.memory=memory
         self.env=env
         self.current_observation = self.env.reset()
         self.discount_factor=discount_factor
-        self.lam=lam
         self.total_steps=0
+        self.possible_actions = [0, 1, 2, 3, 4, 5, 6]
+        self.exploration_probability=1
+        self.decay_rate=decay_rate
+        self.current_observation = self.env.reset()
+        self.num_steps=num_steps
+
+    def pretrain(self,batch_size):
+
+        for i in range(batch_size):
+            random_action = random.choice(self.possible_actions)
+            observation, reward, done, info=self.env.step(random_action)
+            if flag.SHOW_GAME:
+             self.env.render()
+            self.memory.add((self.current_observation,random_action,reward,observation,done))
+            if done:
+                self.current_observation = self.env.reset()
+            else:
+                self.current_observation=observation
+
 
 
     def run(self,model):
-        rewards = []
-        observations = []
-        dones = []
-        actions=[]
-        values=[]
-        max_step_exceed=False
-        for j in range(self.num_steps):
-            observations.append(self.current_observation)
-            predicted_action, value = model.step(self.current_observation)
-
-            actions.append(predicted_action[0]) #check this for multiple envs version
-            values.append(value[0])
-            if flag.MARIO_ENV:
-                observation, reward, done, info = self.env.step(predicted_action[0])
+        for i in range(self.num_steps):
+            if np.random.rand()<self.exploration_probability:
+                action = random.choice(self.possible_actions)
             else:
-                observation, reward, done, info = self.env.step(predicted_action)
+                action= model.step(self.current_observation)
+
+            observation, reward, done, info = self.env.step(action)
+
             if flag.SHOW_GAME:
                 self.env.render()
-            self.current_observation = observation
-            observations.append(self.current_observation)
-            rewards.append(reward)
-            dones.append(done)
-            # self.total_steps+=1
-            # if self.total_steps>=self.max_steps:
-            #     max_step_exceed=True
+
 
             if done:
                 self.current_observation = self.env.reset()
                 print("Done")
 
 
-        advantages=self.compute_advantage(rewards, values, dones)
-        return observations, rewards, actions, values, advantages, dones
+            self.memory.add((self.current_observation,action,reward,observation,done))
+            self.current_observation = observation
+            self.exploration_probability = self.exploration_probability - self.decay_rate
 
-    def compute_advantage(self,rewards,values,dones):
-        advantages = []
-        last_advantage=0
-        for step in reversed(range(self.num_steps)):
-            if dones[step] or step==(self.num_steps-1):
-                advantages.append(rewards[step] - values[step])
-            else:
-                if flag.USE_GAE:
-                    delta=rewards[step] + self.discount_factor * values[step + 1] - values[step]
-                    advantage= last_advantage = delta + self.discount_factor * self.lam * last_advantage
-                    advantages.append(advantage)
-                else:
-                    advantages.append(rewards[step] + self.discount_factor * values[step + 1] - values[step])
-        if flag.USE_GAE:
-            advantages.reverse()
 
-        return advantages
+class Memory():
+    def __init__(self,memory_size,batch_size):
+        self.memory = deque(maxlen=memory_size)
+        self.sample_size=batch_size
+    def add(self,slice):
+        self.memory.append(slice)
+    def sample(self):
+        return random.sample(self.memory,self.sample_size)
+
 
 
 class Trainer():
-    def __init__(self,num_training_steps,num_game_steps,num_epoch,
+    def __init__(self,num_training_steps,num_epoch,
                  batch_size,learning_rate,discount_factor,env,num_action,
-                 value_coef,clip_range,save_interval,entropy_coef,lam):
+                save_interval,log_interval,decay_rate,num_steps,memory_size):
         if flag.ON_COLAB:
             tf.enable_eager_execution()
         self.env=env
@@ -83,104 +85,80 @@ class Trainer():
         self.batch_num=batch_size
         self.learning_rate=learning_rate
         self.discount_factor=discount_factor
-        self.num_game_steps=num_game_steps
         self.batch_size = batch_size
+        self.num_steps=num_steps
 
-        self.clip_range=clip_range
-        self.value_coef=value_coef
-        self.entropy_coef = entropy_coef
 
-        self.new_model = Model(num_action,self.value_coef,self.entropy_coef,self.clip_range)
+        self.new_model = Model(num_action)
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
 
-        assert self.num_game_steps % self.batch_size == 0
-        self.batch_num=int(self.num_game_steps / self.batch_size)
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        train_log_dir = 'logs/gradient_tape/' + self.current_time + '/train'
+        train_log_dir = 'logs/' + self.current_time + '/train'
+        log_dir='logs/' + self.current_time + '/log'
         if flag.TENSORBOARD_AVALAIBLE:
             self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         self.save_interval=save_interval
-        self.lam=lam
+        self.memory=Memory(memory_size,batch_size)
+        self.decay_rate=decay_rate
+        logger.configure(dir=log_dir)
+        self.log_interval=log_interval
 
 
-    def collect_experiance_and_train(self):
-        train_runner=Runner(num_steps=self.num_game_steps,env=self.env,discount_factor=self.discount_factor,lam=self.lam)
+
+    def collect_experience_and_train(self):
+        train_runner=Runner(env=self.env,discount_factor=self.discount_factor,memory=self.memory,decay_rate=self.decay_rate,num_steps=self.num_steps)
         if flag.LOAD:
             self.new_model.load_weights('./first_train/step800-20191015-132314/train') #check this put
             print("loaded model weigths from checkpoint")
-        train_loss = []
+        train_runner.pretrain(self.batch_size)
+
         for train_step in range(self.training_steps):
-            observations = []
-            rewards = []
-            dones = []
-            actions = []
-            values = []
-            observations, rewards, actions, values, advantages, dones=train_runner.run(self.new_model)
-
+            train_runner.run(self.new_model)
             self.loss_avg = tf.keras.metrics.Mean()
-            self.policy_loss_avg = tf.keras.metrics.Mean()
-            self.value_loss_avg = tf.keras.metrics.Mean()
-            self.avg_entropy = tf.keras.metrics.Mean()
+            experience_slice= self.memory.sample()
 
-
-            experiance = list(zip(observations,rewards,actions,values,advantages,dones))
-            random.shuffle(experiance)
             for epoch in range(0,self.num_epoch):
-                for n in range(0,self.batch_num):
-                    start_index=n*self.batch_size
-                    experiance_slice=experiance[start_index:start_index+self.batch_size]
-                    observations, rewards, actions,values,advantages, dones = zip(*experiance_slice)
-                    loss,policy_loss,value_loss,entropy=self.train_model(observations,rewards,actions,values,advantages,dones)
-                    self.loss_avg(loss)
-                    self.policy_loss_avg(policy_loss)
-                    self.value_loss_avg(value_loss)
-                    self.avg_entropy(entropy)
+                loss=self.train_model(experience_slice)
+                self.loss_avg(loss)
+
                 loss_avg_result=self.loss_avg.result()
-                policy_loss_avg_result=self.policy_loss_avg.result()
-                value_loss_avg_result=self.value_loss_avg.result()
-                entropy_avg_result=self.avg_entropy.result()
-                print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(train_step,epoch,
-                                                                             loss_avg_result,
-                                                                            policy_loss_avg_result,
-                                                                             value_loss_avg_result,
-                                                                             entropy_avg_result))
+                # print("training step {:03d}, Epoch {:03d}: Loss: {:.3f} ".format(train_step,epoch,
+                #                                                              loss_avg_result))
                 if flag.TENSORBOARD_AVALAIBLE:
                     with self.train_summary_writer.as_default():
                         tf.summary.scalar('loss_avg', loss_avg_result, step=epoch)
-                        tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=epoch)
-                        tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=epoch)
-                       # tf.summary.scalar('learning rate', data=learning_rate, step=epoch)
                     # add more scalars
 
-                self.loss_avg.reset_states()
+            if train_step % self.log_interval == 0:
+                logger.record_tabular("train_step", train_step)
+                logger.record_tabular("loss",  loss_avg_result.numpy())
+                logger.dump_tabular()
+            self.loss_avg.reset_states()
             if train_step % self.save_interval==0:
                 self.new_model.save_weights('./models/step'+str(train_step)+'-'+self.current_time+'/'+'train')
 
+    def get_target_qs(self,rewards_array,next_observation_array,dones_array):
+        target_q=[]
+        for i in range(self.batch_size):
+            if dones_array[i]:
+                target_q.append(rewards_array[i])
+            else:
+                next_q=self.new_model.forward_pass(np.expand_dims(next_observation_array[i],0))
+                target_q.append(rewards_array[i]+self.discount_factor*np.max(next_q))
 
-    def train_model(self,observations,rewards,actions,values,advantages,dones):
-            #print("observations shape",len(observations))
-            observations_array = np.array(observations)
-            rewards_array = np.array(rewards)
-            actions_array = np.array(actions)
-            advantages_array=np.array(advantages)
-            values_array=np.array(values)
-            if flag.USE_STANDARD_ADV:
-                advantages_array=advantages_array.mean() / (advantages_array.std() + 1e-13)
+        return target_q
 
-            if flag.DEBUG:
-                print("input observations shape", observations_array.shape)
-                print("input rewards shape", rewards_array.shape)
-                print("input actions shape", actions_array.shape)
-                print("input advantages shape", advantages_array.shape)
-                print("values shape",values_array.shape)
-
-                print("rewards",rewards)
-                print("advantages",advantages)
-                print("actions",actions_array)
-                print("values",values_array)
-            loss,policy_loss,value_loss,entropy,grads=self.new_model.grad(observations_array, actions_array, rewards_array, values_array,advantages_array)
-            self.optimizer.apply_gradients(zip(grads, self.new_model.trainable_variables))
-            return loss,policy_loss,value_loss,entropy
+    def train_model(self,slice):
+        observations_array = np.array([each[0] for each in slice], ndmin=3)
+        actions_array = np.array([each[1] for each in slice])
+        rewards_array = np.array([each[2] for each in slice])
+        next_observations_array = np.array([each[3] for each in slice], ndmin=3)
+        dones_array = np.array([each[4] for each in slice])
+        target_qs_list=self.get_target_qs(rewards_array,next_observations_array,dones_array)
+        target_qs_array=np.array(target_qs_list)
+        loss,grads=self.new_model.grad(observations_array, actions_array,target_qs_array )
+        self.optimizer.apply_gradients(zip(grads, self.new_model.trainable_variables))
+        return loss
 
 
 

@@ -40,8 +40,9 @@ class PreprocessFrame(gym.ObservationWrapper):
         self.width = 96
         self.height = 96
         self.observation_space = gym.spaces.Box(low=0, high=255,
-            shape=(self.height, self.width, 1), dtype=np.uint8)
+            shape=(self.height, self.width, 4), dtype=np.uint8)
         self.frame_deque = deque([np.zeros((96,96)),np.zeros((96,96)),np.zeros((96,96)), np.zeros((96,96))], maxlen=4)
+
 
 
     def observation(self, frame):
@@ -51,7 +52,6 @@ class PreprocessFrame(gym.ObservationWrapper):
         # Resize the frame to 96x96x1
         frame = frame[35: , :,None]
 
-
         frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
         # frame = frame[:, :, None]
         frame=frame/255.0
@@ -59,48 +59,15 @@ class PreprocessFrame(gym.ObservationWrapper):
         # if flag.DEBUG:
         #     cv2.imshow("frame",frame)
         #     cv2.waitKey(0)
+        frames=self.stack_frames(frame)
+        return frames
 
-        return self.stack_frames(frame)
+
 
     def stack_frames(self,new_frame):
         self.frame_deque.append(new_frame)
-        return np.stack(self.frame_deque)
+        return np.stack(self.frame_deque,2)
 
-class ActionsDiscretizer(gym.ActionWrapper):
-    """
-    Wrap a gym-retro environment and make it use discrete
-    actions for the Sonic game.
-    """
-    def __init__(self, env):
-        super(ActionsDiscretizer, self).__init__(env)
-        buttons = ["RIGHT", "A", "B", "NOOP"]
-        actions = [['NOOP'], ['RIGHT'], ['RIGHT', 'A'], ['RIGHT', 'B'], ['RIGHT', 'A', 'B']]
-        #right B=run faster
-        #right A B=jump faster
-        self.actions = []
-
-        """
-        What we do in this loop:
-        For each action in actions
-            - Create an array of 12 False (12 = nb of buttons)
-            For each button in action: (for instance ['LEFT']) we need to make that left button index = True
-                - Then the button index = LEFT = True
-
-            In fact at the end we will have an array where each array is an action and each elements True of this array
-            are the buttons clicked.
-        """
-        for action in actions:
-            arr = np.array([False] * 5)
-            for button in action:
-                arr[buttons.index(button)] = True
-            self.actions.append(arr)
-
-        print("action is ", self.actions)
-        self.action_space = gym.spaces.Discrete(len(self.actions))
-
-    def step(self, a): # pylint: disable=W0221
-
-        return self.actions[a].copy()
 
 class RewardScaler(gym.RewardWrapper):
     """
@@ -110,45 +77,9 @@ class RewardScaler(gym.RewardWrapper):
     """
     def reward(self, reward):
 
-
-        return reward
-
-
-class AllowBacktracking(gym.Wrapper):
-    """
-    Use deltas in max(X) as the reward, rather than deltas
-    in X. This way, agents are not discouraged too heavily
-    from exploring backwards if there is no way to advance
-    head-on in the level.
-    """
-
-    def __init__(self, env):
-        super(AllowBacktracking, self).__init__(env)
-        self._cur_x = 0
-        self._max_x = 0
-        self.reward_q = collections.deque()
+        return reward/15
 
 
-    def reset(self, **kwargs):  # pylint: disable=E0202
-        self._cur_x = 0
-        self._max_x = 0
-        return self.env.reset(**kwargs)
-
-    def step(self, action):  # pylint: disable=E0202
-        obs, rew, done, info = self.env.step(action)
-        y_pos=info['y_pos']
-        # print("rew",rew)
-        # self._cur_x += rew
-        # rew = max(0, self._cur_x - self._max_x)
-        # self._max_x = max(self._max_x, self._cur_x)
-        # # print("real reward",rew)
-        #print(rew)
-
-        rew=(rew) /15 - 0.01
-
-
-
-        return obs,rew, done, info
 
 
 def make_env(env_idx):
@@ -183,7 +114,7 @@ def make_env(env_idx):
     # Allow back tracking that helps agents are not discouraged too heavily
     # from exploring backwards if there is no way to advance
     # head-on in the level.
-    env = AllowBacktracking(env)
+    env = RewardScaler(env)
     return env
 
 
@@ -257,49 +188,15 @@ def make_train_12():
     return make_env(12)
 
 
-def make_test_level_Green():
-    return make_test()
-
-
-def make_test():
-    """
-    Create an environment with some standard wrappers.
-    """
-
-    # Make the environment
-    env = gym_super_mario_bros.make('SuperMarioBros-v0')
-    env = BinarySpaceToDiscreteSpaceEnv(env, RIGHT_ONLY)
-    print(env.action_space)
-    # Build the actions array
-    # env = ActionsDiscretizer(env)
-
-    # Scale the rewards
-    # env = RewardScaler(env)
-
-    # PreprocessFrame
-    env = PreprocessFrame(env)
-
-    # Stack 4 frames
-    env = FrameStack(env, 6)
-
-
-    # Allow back tracking that helps agents are not discouraged too heavily
-    # from exploring backwards if there is no way to advance
-    # head-on in the level.
-    # env = AllowBacktracking(env)
-
-    return env
-import time
-
-
 
 
 #
 # new_env=make_env(0)
-# new_env.reset()
+# obs=new_env.reset()
+# print(obs.shape)
 # for i in range(0,80):
 #
-#     a,b,c,d=new_env.step(2)
+#     a,b,c,d=new_env.step(3)
 #     print(a.shape)
 #     print("reward is", b)
 #     new_env.render()
