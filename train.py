@@ -197,12 +197,18 @@ class Trainer():
                 current_observations_list = []
                 for i in range(self.num_env):
                     experiences=ray.get(returned_objects[i])
-                    observations.append(experiences[0])
                     rewards.append(experiences[1])
                     dones.append(experiences[2])
                     if experiences[2]:
-                        runners[i].reset.remote()
-                    current_observations_list.append(experiences[0])
+                        returned_object=runners[i].reset.remote()
+                        ray.get(returned_object)
+                        observations.append(returned_object)
+                        current_observations_list.append(returned_object)
+                    else:
+                        observations.append(experiences[0])
+                        current_observations_list.append(experiences[0])
+
+
                 current_observations_array=np.array(current_observations_list)
 
             # observations_array = np.array([each[0] for each in experiences], ndmin=3)
