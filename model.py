@@ -3,7 +3,7 @@ import tensorflow_probability as tfp
 import numpy as np
 import flag
 class Model(tf.keras.Model):
-    def __init__(self,num_action,batch_size,value_coef,entropy_coef,clip_range):
+    def __init__(self,num_action,value_coef,entropy_coef,clip_range):
         super(Model,self).__init__(name='')
         tf.keras.backend.set_floatx('float64')
         self.num_action=num_action
@@ -20,7 +20,6 @@ class Model(tf.keras.Model):
         self.policy_layer=tf.keras.layers.Dense(self.num_action,activation='elu',name="policy_tensor", kernel_regularizer=tf.keras.initializers.VarianceScaling) #maybe use variance_scaling_initializer?
         # self.dist = tf.compat.v1.distributions.Categorical(logits=policy)
         self.softmax_layer=tf.keras.layers.Softmax(name="softmax")
-        self.actions_batch=np.zeros(batch_size)
         self.negative_log_p_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         self.old_negative_log_p = 0  # make this right for the first run
         self.old_values = 0
@@ -55,8 +54,8 @@ class Model(tf.keras.Model):
 
 
 
-    def step(self,input_observations):
-        observations=np.expand_dims(input_observations,0)
+    def step(self,observations):
+        # observations=np.expand_dims(input_observations,0)
         #print(observations.shape)
         #print(observations.shape)
         #print("first forward pass")

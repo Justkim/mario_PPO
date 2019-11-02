@@ -5,33 +5,70 @@ import tensorflow as tf
 import numpy as np
 import flag
 import datetime
+import multiprocessing as mp
+import ray
+import mario_env
+import gym
+
+
+@ray.remote
+class Simulator(object):
+    def __init__(self):
+        self.env = mario_env.make_train_0()
+        self.env.reset()
+
+    def step(self, action):
+        observations,rewards,dones,info=self.env.step(action)
+        self.env.render()
+        return observations, rewards, dones
+
+    def reset(self):
+        return self.env.reset()
+
+
 
 
 class Runner():
-    def __init__(self,num_steps,env,discount_factor,lam):
+    def __init__(self,num_steps,env,discount_factor,lam,model,queue):
+        self.q = queue
         self.num_steps=num_steps
-        self.env=env
-        self.current_observation = self.env.reset()
         self.discount_factor=discount_factor
         self.lam=lam
+        self.env=env
         self.total_steps=0
+        self.current_observation = env.reset()
+        self.model=model
+        self.remote_env=Simulator.remote()
 
 
-    def run(self,model):
+
+    def run(self):
+
+        import tensorflow as tf
         rewards = []
         observations = []
         dones = []
         actions=[]
         values=[]
         max_step_exceed=False
+        print("hehe")
         for j in range(self.num_steps):
+            print("lay")
             observations.append(self.current_observation)
-            predicted_action, value = model.step(self.current_observation)
+            # self.lock.acquire()
+            #new_model = Model(7,1,1,1)
+            predicted_action, value = self.model.step(self.current_observation)
 
+            # self.lock.release()
+
+            print("lala")
             actions.append(predicted_action[0]) #check this for multiple envs version
             values.append(value[0])
             if flag.MARIO_ENV:
-                observation, reward, done, info = self.env.step(predicted_action[0])
+                print("1")
+                returned_object=self.remote_env.step.remote(predicted_action[0])
+                observation, reward, done, info = ray.get(returned_object)
+                print("2")
             else:
                 observation, reward, done, info = self.env.step(predicted_action)
             if flag.SHOW_GAME:
@@ -50,7 +87,11 @@ class Runner():
 
 
         advantages=self.compute_advantage(rewards, values, dones)
-        return observations, rewards, actions, values, advantages, dones
+        # self.q.put((observations, rewards, actions, values, advantages, dones))
+        self.q.put((1))
+        self.q.close()
+
+        #return observations, rewards, actions, values, advantages, dones
 
     def compute_advantage(self,rewards,values,dones):
         advantages = []
@@ -72,29 +113,28 @@ class Runner():
 
 
 class Trainer():
-    def __init__(self,num_training_steps,num_game_steps,num_epoch,
-                 batch_size,learning_rate,discount_factor,env,num_action,
-                 value_coef,clip_range,save_interval,entropy_coef,lam):
+    def __init__(self,num_training_steps,num_env,num_game_steps,num_epoch,
+                 learning_rate,discount_factor,env,num_action,
+                 value_coef,clip_range,save_interval,entropy_coef,lam,mini_batch_size):
         if flag.ON_COLAB:
             tf.enable_eager_execution()
-        self.env=env
+        self.envs=env
         self.training_steps=num_training_steps
         self.num_epoch=num_epoch
-        self.batch_num=batch_size
         self.learning_rate=learning_rate
         self.discount_factor=discount_factor
         self.num_game_steps=num_game_steps
-        self.batch_size = batch_size
-
+        self.mini_batch_size = mini_batch_size
+        self.num_env=num_env
+        self.batch_size=num_env*num_game_steps
         self.clip_range=clip_range
         self.value_coef=value_coef
         self.entropy_coef = entropy_coef
-
-        self.new_model = Model(num_action,self.value_coef,self.entropy_coef,self.clip_range)
+        self.mini_batch_size=mini_batch_size
+        self.num_action=num_action
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
-
-        assert self.num_game_steps % self.batch_size == 0
-        self.batch_num=int(self.num_game_steps / self.batch_size)
+        assert self.batch_size % self.mini_batch_size == 0
+        self.mini_batch_num=int(self.batch_size / self.mini_batch_size)
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = 'logs/gradient_tape/' + self.current_time + '/train'
         if flag.TENSORBOARD_AVALAIBLE:
@@ -103,38 +143,96 @@ class Trainer():
         self.lam=lam
 
 
+
+
     def collect_experiance_and_train(self):
-        train_runner=Runner(num_steps=self.num_game_steps,env=self.env,discount_factor=self.discount_factor,lam=self.lam)
+
+        self.new_model=Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
         if flag.LOAD:
             self.new_model.load_weights('./first_train/step800-20191015-132314/train') #check this put
             print("loaded model weigths from checkpoint")
-        train_loss = []
+
+        ray.init()
+        current_observations = []
+        runners = []
+        returned_observations = []
+        returned_objects = []
+
+        for i in range(self.num_env):
+            #new_simulator=Simulator()
+            runners.append(Simulator.remote())
+            returned_observations.append(runners[i].reset.remote())
+        for i in range(self.num_env):
+            current_observations.append(ray.get(returned_observations[i]))
+        current_observations_array=np.array(current_observations)
+
+
         for train_step in range(self.training_steps):
-            observations = []
-            rewards = []
-            dones = []
-            actions = []
-            values = []
-            observations, rewards, actions, values, advantages, dones=train_runner.run(self.new_model)
 
             self.loss_avg = tf.keras.metrics.Mean()
             self.policy_loss_avg = tf.keras.metrics.Mean()
             self.value_loss_avg = tf.keras.metrics.Mean()
             self.avg_entropy = tf.keras.metrics.Mean()
+            experiences=[]
+            returned_objects=[]
+            #self.new_model.step(np.array(current_observations)
+            observations=[]
+            rewards=[]
+            dones=[]
+            # for i in range(self.num_env):
+            #     observations.append([])
+            #     rewards.append([])
+            #     dones.append([])
+            current_observations_list=[]
+            values=[]
+            actions=[]
+            for game_step in range(self.num_game_steps):
+                actions_, values_ = self.new_model.step(np.array(current_observations_array))
+                values.extend(np.ndarray.tolist(values_))
+                actions.extend(np.ndarray.tolist(actions_))
+
+                for i in range(self.num_env):
+                    returned_objects.append(runners[i].step.remote(actions[i]))
+                current_observations_list = []
+                for i in range(self.num_env):
+                    experiences=ray.get(returned_objects[i])
+                    observations.append(experiences[0])
+                    rewards.append(experiences[1])
+                    dones.append(experiences[2])
+                    current_observations_list.append(experiences[0])
+                current_observations_array=np.array(current_observations_list)
 
 
-            experiance = list(zip(observations,rewards,actions,values,advantages,dones))
-            random.shuffle(experiance)
+
+
+
+
+
+            # observations_array = np.array([each[0] for each in experiences], ndmin=3)
+            # rewards_array = np.array([each[1] for each in experiences])
+            # dones_array = np.array([each[2] for each in experiences])
+            # observations_array=np.array(observations)
+            # rewards_array=np.array(rewards)
+            # dones_array=np.array(dones)
+
+        #    exit()
+
+            advantages=self.compute_advantage(rewards,values,dones)
+
+            experience=list(zip(observations,rewards,actions,values,advantages))
             for epoch in range(0,self.num_epoch):
-                for n in range(0,self.batch_num):
-                    start_index=n*self.batch_size
-                    experiance_slice=experiance[start_index:start_index+self.batch_size]
-                    observations, rewards, actions,values,advantages, dones = zip(*experiance_slice)
-                    loss,policy_loss,value_loss,entropy=self.train_model(observations,rewards,actions,values,advantages,dones)
+
+                for n in range(0,self.mini_batch_num):
+                    start_index=n*self.mini_batch_size
+                    experiance_slice=experience[start_index:start_index+self.batch_size]
+                    observations, rewards, actions,values,advantages = zip(*experiance_slice)
+
+                    loss, policy_loss, value_loss, entropy=self.train_model(observations,rewards,actions,values,advantages)
                     self.loss_avg(loss)
                     self.policy_loss_avg(policy_loss)
                     self.value_loss_avg(value_loss)
                     self.avg_entropy(entropy)
+
                 loss_avg_result=self.loss_avg.result()
                 policy_loss_avg_result=self.policy_loss_avg.result()
                 value_loss_avg_result=self.value_loss_avg.result()
@@ -153,11 +251,32 @@ class Trainer():
                     # add more scalars
 
                 self.loss_avg.reset_states()
+
             if train_step % self.save_interval==0:
                 self.new_model.save_weights('./models/step'+str(train_step)+'-'+self.current_time+'/'+'train')
 
+    def compute_advantage(self, rewards, values, dones):
+        advantages = []
+        last_advantage = 0
+        for env in range(self.num_env):
+            for step in reversed(range(self.num_game_steps)):
+                total_step_index=env*self.num_game_steps+step
+                if dones[total_step_index] or step == (self.num_game_steps - 1):
+                    advantages.append(rewards[ total_step_index] - values[ total_step_index])
+                else:
+                    if flag.USE_GAE:
+                        delta = rewards[ total_step_index] + self.discount_factor * values[ total_step_index + 1] - values[ total_step_index]
+                        advantage = last_advantage = delta + self.discount_factor * self.lam * last_advantage
+                        advantages.append(advantage)
+                    else:
+                        advantages.append(rewards[ total_step_index] + self.discount_factor * values[ total_step_index + 1] - values[ total_step_index])
+            if flag.USE_GAE:
+                advantages.reverse()
 
-    def train_model(self,observations,rewards,actions,values,advantages,dones):
+        return advantages
+
+
+    def train_model(self,observations,rewards,actions,values,advantages):
             #print("observations shape",len(observations))
             observations_array = np.array(observations)
             rewards_array = np.array(rewards)
@@ -174,8 +293,8 @@ class Trainer():
                 print("input advantages shape", advantages_array.shape)
                 print("values shape",values_array.shape)
 
-                print("rewards",rewards)
-                print("advantages",advantages)
+                print("rewards",rewards_array)
+                print("advantages",advantages_array)
                 print("actions",actions_array)
                 print("values",values_array)
             loss,policy_loss,value_loss,entropy,grads=self.new_model.grad(observations_array, actions_array, rewards_array, values_array,advantages_array)
