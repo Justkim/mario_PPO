@@ -199,14 +199,10 @@ class Trainer():
                     observations.append(experiences[0])
                     rewards.append(experiences[1])
                     dones.append(experiences[2])
+                    if experiences[2]:
+                        runners[i].reset.remote()
                     current_observations_list.append(experiences[0])
                 current_observations_array=np.array(current_observations_list)
-
-
-
-
-
-
 
             # observations_array = np.array([each[0] for each in experiences], ndmin=3)
             # rewards_array = np.array([each[1] for each in experiences])
