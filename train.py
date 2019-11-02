@@ -187,24 +187,28 @@ class Trainer():
             current_observations_list=[]
             values=[]
             actions=[]
+            done_flags=[False for x in range(0,self.num_env)]
             for game_step in range(self.num_game_steps):
                 actions_, values_ = self.new_model.step(np.array(current_observations_array))
                 values.extend(np.ndarray.tolist(values_))
                 actions.extend(np.ndarray.tolist(actions_))
 
-                for i in range(self.num_env):
-                    returned_objects.append(runners[i].step.remote(actions[i]))
                 current_observations_list = []
                 for i in range(self.num_env):
-                    experiences=ray.get(returned_objects[i])
-                    rewards.append(experiences[1])
-                    dones.append(experiences[2])
-                    if experiences[2]:
-                        returned_object=runners[i].reset.remote()
+
+                    if done_flags[i]:
+                        returned_object = runners[i].reset.remote()
                         ray.get(returned_object)
                         observations.append(returned_object)
                         current_observations_list.append(returned_object)
+                        done_flags[i] = False
                     else:
+                        returned_objects.append(runners[i].step.remote(actions[i]))
+                        experiences=ray.get(returned_objects[i])
+                        rewards.append(experiences[1])
+                        dones.append(experiences[2])
+                        if experiences[2]:
+                            done_flags[i]=True
                         observations.append(experiences[0])
                         current_observations_list.append(experiences[0])
 
