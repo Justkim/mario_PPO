@@ -19,7 +19,8 @@ class Simulator(object):
 
     def step(self, action):
         observations,rewards,dones,info=self.env.step(action)
-        self.env.render()
+        if flag.SHOW_GAME:
+            self.env.render()
         return observations, rewards, dones
 
     def reset(self):
