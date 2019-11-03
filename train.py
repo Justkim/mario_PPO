@@ -9,6 +9,7 @@ import multiprocessing as mp
 import ray
 import mario_env
 import gym
+from baselines import logger
 
 
 @ray.remote
@@ -118,7 +119,7 @@ class Runner():
 class Trainer():
     def __init__(self,num_training_steps,num_env,num_game_steps,num_epoch,
                  learning_rate,discount_factor,env,num_action,
-                 value_coef,clip_range,save_interval,entropy_coef,lam,mini_batch_size):
+                 value_coef,clip_range,save_interval,log_interval,entropy_coef,lam,mini_batch_size):
         if flag.ON_COLAB:
             tf.enable_eager_execution()
         self.envs=env
@@ -139,12 +140,14 @@ class Trainer():
         assert self.batch_size % self.mini_batch_size == 0
         self.mini_batch_num=int(self.batch_size / self.mini_batch_size)
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        train_log_dir = 'logs/gradient_tape/' + self.current_time + '/train'
+        train_log_dir = 'logs/' + self.current_time + '/train'
+        log_dir = 'logs/' + self.current_time + '/log'
         if flag.TENSORBOARD_AVALAIBLE:
             self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         self.save_interval=save_interval
         self.lam=lam
-
+        logger.configure(dir=log_dir)
+        self.log_interval=log_interval
 
 
 
@@ -230,24 +233,36 @@ class Trainer():
                     self.value_loss_avg(value_loss)
                     self.avg_entropy(entropy)
 
-                loss_avg_result=self.loss_avg.result()
-                policy_loss_avg_result=self.policy_loss_avg.result()
-                value_loss_avg_result=self.value_loss_avg.result()
-                entropy_avg_result=self.avg_entropy.result()
-                print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(train_step,epoch,
-                                                                             loss_avg_result,
-                                                                            policy_loss_avg_result,
-                                                                             value_loss_avg_result,
-                                                                             entropy_avg_result))
-                if flag.TENSORBOARD_AVALAIBLE:
-                    with self.train_summary_writer.as_default():
-                        tf.summary.scalar('loss_avg', loss_avg_result, step=epoch)
-                        tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=epoch)
-                        tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=epoch)
-                       # tf.summary.scalar('learning rate', data=learning_rate, step=epoch)
-                    # add more scalars
+            loss_avg_result=self.loss_avg.result()
+            policy_loss_avg_result=self.policy_loss_avg.result()
+            value_loss_avg_result=self.value_loss_avg.result()
+            entropy_avg_result=self.avg_entropy.result()
+            print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(train_step,epoch,
+                                                                         loss_avg_result,
+                                                                        policy_loss_avg_result,
+                                                                         value_loss_avg_result,
+                                                                         entropy_avg_result))
+            if flag.TENSORBOARD_AVALAIBLE:
+                with self.train_summary_writer.as_default():
+                    tf.summary.scalar('loss_avg', loss_avg_result, step=epoch)
+                    tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=epoch)
+                    tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=epoch)
+                   # tf.summary.scalar('learning rate', data=learning_rate, step=epoch)
+                # add more scalars
 
-                self.loss_avg.reset_states()
+            if train_step % self.log_interval == 0:
+                logger.record_tabular("train_step", train_step)
+                logger.record_tabular("loss", loss_avg_result.numpy())
+                logger.record_tabular("value loss",  value_loss_avg_result.numpy())
+                logger.record_tabular("policy loss", policy_loss_avg_result.numpy())
+                logger.record_tabular("entropy", entropy_avg_result.numpy())
+                logger.record_tabular("policy", self.new_model.policy.numpy())
+                logger.dump_tabular()
+
+            self.loss_avg.reset_states()
+            self.policy_loss_avg.reset_states()
+            self.value_loss_avg.reset_states()
+            self.avg_entropy.reset_states()
 
             if train_step % self.save_interval==0:
                 self.new_model.save_weights('./models/step'+str(train_step)+'-'+self.current_time+'/'+'train')
