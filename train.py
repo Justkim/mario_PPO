@@ -256,7 +256,7 @@ class Trainer():
                 logger.record_tabular("value loss",  value_loss_avg_result.numpy())
                 logger.record_tabular("policy loss", policy_loss_avg_result.numpy())
                 logger.record_tabular("entropy", entropy_avg_result.numpy())
-                logger.record_tabular("policy", self.new_model.dist.numpy())
+               # logger.record_tabular("policy", self.new_model.dist.numpy())
                 logger.dump_tabular()
 
             self.loss_avg.reset_states()
