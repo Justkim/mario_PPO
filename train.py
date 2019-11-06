@@ -14,16 +14,18 @@ from baselines import logger
 
 @ray.remote
 class Simulator(object):
-    def __init__(self):
+    def __init__(self,num_action_repeat):
         self.env = mario_env.make_train_0()
         self.env.reset()
+        self.num_action_repeat=num_action_repeat
 
     def step(self, action):
-        observations,rewards,dones,info=self.env.step(action)
+        for i in range(self.num_action_repeat):
+            observations,rewards,dones,info=self.env.step(action)
+            if dones:
+                observations = self.reset()
         if flag.SHOW_GAME:
             self.env.render()
-        if dones:
-            observations=self.reset()
         return observations, rewards, dones
 
     def reset(self):
@@ -119,7 +121,7 @@ class Runner():
 class Trainer():
     def __init__(self,num_training_steps,num_env,num_game_steps,num_epoch,
                  learning_rate,discount_factor,env,num_action,
-                 value_coef,clip_range,save_interval,log_interval,entropy_coef,lam,mini_batch_size):
+                 value_coef,clip_range,save_interval,log_interval,entropy_coef,lam,mini_batch_size,num_action_repeat):
         if flag.ON_COLAB:
             tf.enable_eager_execution()
         self.envs=env
@@ -144,10 +146,12 @@ class Trainer():
         log_dir = 'logs/' + self.current_time + '/log'
         if flag.TENSORBOARD_AVALAIBLE:
             self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+        else:
+            logger.configure(dir=log_dir)
         self.save_interval=save_interval
         self.lam=lam
-        logger.configure(dir=log_dir)
         self.log_interval=log_interval
+        self.num_action_repeat=num_action_repeat
 
 
 
@@ -165,7 +169,7 @@ class Trainer():
 
         for i in range(self.num_env):
             #new_simulator=Simulator()
-            runners.append(Simulator.remote())
+            runners.append(Simulator.remote(self.num_action_repeat))
             returned_observations.append(runners[i].reset.remote())
         for i in range(self.num_env):
             current_observations.append(ray.get(returned_observations[i]))
@@ -199,7 +203,7 @@ class Trainer():
                 actions.extend(np.ndarray.tolist(actions_))
                 current_observations_list = []
                 for i in range(self.num_env):
-                        returned_objects.append(runners[i].step.remote(actions[i]))
+                        returned_objects.append(runners[i].step.remote(actions_[i]))
                         experiences=ray.get(returned_objects[i])
                         rewards.append(experiences[1])
                         dones.append(experiences[2])
@@ -241,22 +245,25 @@ class Trainer():
                                                                         policy_loss_avg_result,
                                                                          value_loss_avg_result,
                                                                          entropy_avg_result))
+            if flag.DEBUG:
+                print("policy", self.new_model.probs)
             if flag.TENSORBOARD_AVALAIBLE:
                 with self.train_summary_writer.as_default():
-                    tf.summary.scalar('loss_avg', loss_avg_result, step=epoch)
-                    tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=epoch)
-                    tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=epoch)
+                    tf.summary.scalar('loss_avg', loss_avg_result, step=train_step)
+                    tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=train_step)
+                    tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=train_step)
+                    tf.summary.scalar('entropy_avg', data=entropy_avg_result, step=train_step)
                    # tf.summary.scalar('learning rate', data=learning_rate, step=epoch)
                 # add more scalars
-
-            if train_step % self.log_interval == 0:
-                logger.record_tabular("train_step", train_step)
-                logger.record_tabular("loss", loss_avg_result.numpy())
-                logger.record_tabular("value loss",  value_loss_avg_result.numpy())
-                logger.record_tabular("policy loss", policy_loss_avg_result.numpy())
-                logger.record_tabular("entropy", entropy_avg_result.numpy())
-               # logger.record_tabular("policy", self.new_model.dist.numpy())
-                logger.dump_tabular()
+            else:
+                if train_step % self.log_interval == 0:
+                    logger.record_tabular("train_step", train_step)
+                    logger.record_tabular("loss", loss_avg_result.numpy())
+                    logger.record_tabular("value loss",  value_loss_avg_result.numpy())
+                    logger.record_tabular("policy loss", policy_loss_avg_result.numpy())
+                    logger.record_tabular("entropy", entropy_avg_result.numpy())
+                   # logger.record_tabular("policy", self.new_model.dist.numpy())
+                    logger.dump_tabular()
 
             self.loss_avg.reset_states()
             self.policy_loss_avg.reset_states()

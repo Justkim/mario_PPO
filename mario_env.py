@@ -144,7 +144,7 @@ class AllowBacktracking(gym.Wrapper):
         # # print("real reward",rew)
         #print(rew)
 
-        rew=(rew) /15 - 0.01
+        rew=rew/15 - 0.01
 
 
 

@@ -2,6 +2,8 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
 import flag
+
+
 class Model(tf.keras.Model):
     def __init__(self,num_action,value_coef,entropy_coef,clip_range):
         super(Model,self).__init__(name='')
@@ -17,19 +19,17 @@ class Model(tf.keras.Model):
         self.flatten=tf.keras.layers.Flatten(name="flatten")
         self.fc1=tf.keras.layers.Dense(512,activation='elu',name="fc1")
         self.value=tf.keras.layers.Dense(1,name="value_layer")
-        self.policy_layer=tf.keras.layers.Dense(self.num_action,activation='elu',name="policy_tensor", kernel_regularizer=tf.keras.initializers.VarianceScaling) #maybe use variance_scaling_initializer?
+        self.policy_layer=tf.keras.layers.Dense(self.num_action,activation='elu',name="policy_tensor", kernel_initializer=tf.keras.initializers.VarianceScaling) #maybe use variance_scaling_initializer?
         # self.dist = tf.compat.v1.distributions.Categorical(logits=policy)
         self.softmax_layer=tf.keras.layers.Softmax(name="softmax")
         self.negative_log_p_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         self.old_negative_log_p = 0  # make this right for the first run
         self.old_values = 0
-
         self.clip_range = clip_range
 
         self.value_coef = tf.cast(value_coef, dtype="float64")
         self.entropy_coef = tf.cast(entropy_coef, dtype="float64")
         self.first_train=True
-
 
 
     def forward_pass(self,input_observations):
@@ -50,8 +50,10 @@ class Model(tf.keras.Model):
         #self.policy=tf.maximum(self.policy_layer(x),1e-13)
         self.dist = tfp.distributions.Categorical(self.policy)
         self.action=self.dist.sample()
+        self.probs=(self.softmax_layer(self.policy)).numpy()
+        randoms= np.expand_dims(np.random.rand(self.probs.shape[0]),axis=1)
+        self.action=(self.probs.cumsum(axis=1)>randoms).argmax(axis=1)
         return self.action,self.predicted_value
-
 
 
     def step(self,observations):
@@ -60,7 +62,8 @@ class Model(tf.keras.Model):
         #print(observations.shape)
         #print("first forward pass")
         action,predicted_value=self.forward_pass(observations)
-        return action.numpy(),predicted_value.numpy()
+        return action,predicted_value.numpy()
+
 
     def compute_loss(self, input_observations, rewards, actions, values, advantages):
         #print("second forward pass")
@@ -72,7 +75,6 @@ class Model(tf.keras.Model):
         #     print("predicted value",predicted_value)
 
         #  clipped_vf= old_value + tf.clip_by_value(train_model.vf - old_value , -clip_range , clip_range)
-
         # value_loss = tf.losses.mse(predicted_value, tf.cast(rewards, dtype="float64"))
         value_loss=tf.keras.losses.mse(predicted_value,  tf.cast(rewards, dtype="float64"))
         if not self.first_train and flag.VALUE_CLIP:
@@ -83,11 +85,7 @@ class Model(tf.keras.Model):
         else:
             value_loss = tf.reduce_mean(value_loss)
 
-
         negative_log_p = self.negative_log_p_object(actions, self.policy)
-
-
-
         if self.first_train:
             ratio = tf.cast(1, dtype="float64")
         else:
@@ -95,23 +93,19 @@ class Model(tf.keras.Model):
 
         self.old_negative_log_p = negative_log_p
         self.old_values=predicted_value
-
         policy_loss = advantages * ratio
-
-
         clipped_policy_loss = advantages * tf.clip_by_value(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range)
-
-
         selected_policy_loss = -tf.reduce_mean(tf.minimum(policy_loss, clipped_policy_loss))
         entropy = tf.reduce_mean(self.dist.entropy())
         #value_coef_tensor = tf.convert_to_tensor(self.value_coef, dtype="float64")
-
-
         loss = selected_policy_loss + (self.value_coef * value_loss) - (self.entropy_coef * entropy)
+        #loss = selected_policy_loss -(self.entropy_coef * entropy)
         # print("value_loss",value_loss)
         # print("loss",loss)
         # print("selected_policy_loss", selected_policy_loss)
+
         if flag.DEBUG:
+
             print("value_loss", value_loss)
             print("negative_log", negative_log_p)
             print("ratio", ratio)
