@@ -3,6 +3,13 @@ import tensorflow_probability as tfp
 import numpy as np
 import flag
 
+def make_conv_layer(filters,kernel_size,channels_order,name,stride_size=1):
+    return tf.keras.layers.Conv2D(filters, kernel_size , strides=(stride_size,stride_size), activation='relu', data_format=channels_order,
+                                            name=name,kernel_initializer=tf.keras.initializers.VarianceScaling(
+      scale=2., mode="fan_in", distribution="uniform"))
+def make_dense_layer(units,name,activation=None):
+    return tf.keras.layers.Dense(units=units,activation=activation,name=name,kernel_initializer=tf.keras.initializers.VarianceScaling(
+      scale=2., mode="fan_in", distribution="uniform"))
 
 class Model(tf.keras.Model):
     def __init__(self,num_action,value_coef,entropy_coef,clip_range):
@@ -17,21 +24,17 @@ class Model(tf.keras.Model):
         # self.conv2 = tf.keras.layers.Conv2D(64, 4, strides=(1,1),activation='elu',data_format=channels_order,name="conv2")
         # self.conv3 = tf.keras.layers.Conv2D(64, 3, strides=(1,1),activation='elu',data_format=channels_order,name="conv3")
 
-        self.conv1 = tf.keras.layers.Conv2D(32, 4 , strides=(1, 1), activation='relu', data_format=channels_order,
-                                            name="conv1",kernel_initializer=tf.keras.initializers.he_uniform)
-        self.conv2 = tf.keras.layers.Conv2D(64, 5, strides=(2, 2), activation='relu', data_format=channels_order,
-                                            name="conv2",kernel_initializer=tf.keras.initializers.he_uniform)
-        self.conv3 = tf.keras.layers.Conv2D(128, 4, strides=(1, 1), activation='relu', data_format=channels_order,
-                                            name="conv3",kernel_initializer=tf.keras.initializers.he_uniform)
-        self.conv4 = tf.keras.layers.Conv2D(256, 4, strides=(2, 2), activation='relu', data_format=channels_order,
-                                            name="conv4",kernel_initializer=tf.keras.initializers.he_uniform)
-        self.conv5 = tf.keras.layers.Conv2D(256, 4, activation='relu', data_format=channels_order,
-                                            name="conv5",kernel_initializer=tf.keras.initializers.he_uniform)
+        self.conv1 = make_conv_layer(32, 4 ,channels_order,"conv1",1)
+        self.conv2 = make_conv_layer(64, 5,channels_order,"conv2",2)
+        self.conv3 = make_conv_layer(128, 4,channels_order, "conv3",1)
+        self.conv4 = make_conv_layer(256, 4,channels_order, "conv4",2)
+        self.conv5 = make_conv_layer(256, 4, channels_order, "conv5")
+
 
         self.flatten=tf.keras.layers.Flatten(name="flatten")
-        self.fc1=tf.keras.layers.Dense(512,activation='relu',name="fc1",kernel_initializer=tf.keras.initializers.he_uniform)
-        self.value=tf.keras.layers.Dense(1,name="value_layer",kernel_initializer=tf.keras.initializers.he_uniform)
-        self.policy_layer=tf.keras.layers.Dense(self.num_action,activation='elu',name="policy_tensor",kernel_initializer=tf.keras.initializers.he_uniform) #maybe use variance_scaling_initializer?
+        self.fc1=make_dense_layer(units=512,activation='relu',name="fc1")
+        self.value=make_dense_layer(units=1,name="value_layer")
+        self.policy_layer=make_dense_layer(self.num_action,activation='relu',name="policy_tensor") #maybe use variance_scaling_initializer?
         # self.dist = tf.compat.v1.distributions.Categorical(logits=policy)
         self.softmax_layer=tf.keras.layers.Softmax(name="softmax")
         self.negative_log_p_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
