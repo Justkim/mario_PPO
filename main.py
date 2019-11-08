@@ -22,7 +22,7 @@ if flag.TRAIN:
     new_trainer=Trainer(num_training_steps=20000,num_env=16,num_game_steps=128,num_epoch=3,learning_rate=0.001
                         ,discount_factor=0.99,env=env,num_action=7,clip_range=0.1,value_coef=0.5,save_interval=50,
                         log_interval=10,
-                        entropy_coef=0.0,lam=0.99,mini_batch_size=64,num_action_repeat=1)
+                        entropy_coef=0.005,lam=0.99,mini_batch_size=128,num_action_repeat=1)
     new_trainer.collect_experiance_and_train()
 elif flag.PLAY:
     new_player=Player(env=env,load_path='./trains/3/step1100-20191107-120331/train')
