@@ -13,13 +13,25 @@ class Model(tf.keras.Model):
             channels_order = "channels_first"
         else:
             channels_order = "channels_first"
-        self.conv1=tf.keras.layers.Conv2D(32, 8, strides=(4,4),activation='elu',data_format=channels_order,name="conv1")
-        self.conv2 = tf.keras.layers.Conv2D(64, 4, strides=(1,1),activation='elu',data_format=channels_order,name="conv2")
-        self.conv3 = tf.keras.layers.Conv2D(64, 3, strides=(1,1),activation='elu',data_format=channels_order,name="conv3")
+        # self.conv1=tf.keras.layers.Conv2D(32, 8, strides=(4,4),activation='elu',data_format=channels_order,name="conv1")
+        # self.conv2 = tf.keras.layers.Conv2D(64, 4, strides=(1,1),activation='elu',data_format=channels_order,name="conv2")
+        # self.conv3 = tf.keras.layers.Conv2D(64, 3, strides=(1,1),activation='elu',data_format=channels_order,name="conv3")
+
+        self.conv1 = tf.keras.layers.Conv2D(32, 4 , strides=(1, 1), activation='relu', data_format=channels_order,
+                                            name="conv1",kernel_initializer=tf.keras.initializers.he_uniform)
+        self.conv2 = tf.keras.layers.Conv2D(64, 5, strides=(2, 2), activation='relu', data_format=channels_order,
+                                            name="conv2",kernel_initializer=tf.keras.initializers.he_uniform)
+        self.conv3 = tf.keras.layers.Conv2D(128, 4, strides=(1, 1), activation='relu', data_format=channels_order,
+                                            name="conv3",kernel_initializer=tf.keras.initializers.he_uniform)
+        self.conv4 = tf.keras.layers.Conv2D(256, 4, strides=(2, 2), activation='relu', data_format=channels_order,
+                                            name="conv4",kernel_initializer=tf.keras.initializers.he_uniform)
+        self.conv5 = tf.keras.layers.Conv2D(256, 4, activation='relu', data_format=channels_order,
+                                            name="conv5",kernel_initializer=tf.keras.initializers.he_uniform)
+
         self.flatten=tf.keras.layers.Flatten(name="flatten")
-        self.fc1=tf.keras.layers.Dense(512,activation='elu',name="fc1")
-        self.value=tf.keras.layers.Dense(1,name="value_layer")
-        self.policy_layer=tf.keras.layers.Dense(self.num_action,activation='elu',name="policy_tensor", kernel_initializer=tf.keras.initializers.VarianceScaling) #maybe use variance_scaling_initializer?
+        self.fc1=tf.keras.layers.Dense(512,activation='relu',name="fc1",kernel_initializer=tf.keras.initializers.he_uniform)
+        self.value=tf.keras.layers.Dense(1,name="value_layer",kernel_initializer=tf.keras.initializers.he_uniform)
+        self.policy_layer=tf.keras.layers.Dense(self.num_action,activation='elu',name="policy_tensor",kernel_initializer=tf.keras.initializers.he_uniform) #maybe use variance_scaling_initializer?
         # self.dist = tf.compat.v1.distributions.Categorical(logits=policy)
         self.softmax_layer=tf.keras.layers.Softmax(name="softmax")
         self.negative_log_p_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
@@ -39,6 +51,10 @@ class Model(tf.keras.Model):
         x=self.conv2(x)
         #print(x.shape)
         x=self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+
+
         #print(x.shape)
         x=self.flatten(x)
         #print(x.shape)
@@ -62,6 +78,8 @@ class Model(tf.keras.Model):
         #print(observations.shape)
         #print("first forward pass")
         action,predicted_value=self.forward_pass(observations)
+        if flag.DEBUG:
+            print(self.probs)
         return action,predicted_value.numpy()
 
 
