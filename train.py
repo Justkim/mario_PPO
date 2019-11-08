@@ -225,7 +225,7 @@ class Trainer():
 
                 for n in range(0,self.mini_batch_num):
                     start_index=n*self.mini_batch_size
-                    experiance_slice=experience[start_index:start_index+self.batch_size]
+                    experiance_slice=experience[start_index:start_index+self.mini_batch_size]
                     observations, rewards, actions,values,advantages = zip(*experiance_slice)
 
                     loss, policy_loss, value_loss, entropy=self.train_model(observations,rewards,actions,values,advantages)
