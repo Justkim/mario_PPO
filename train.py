@@ -157,7 +157,7 @@ class Trainer():
 
         self.new_model=Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
         if flag.LOAD:
-            self.new_model.load_weights('./models/step220-20191103-113750/train') #check this put
+            self.new_model.load_weights('./models/step760-20191106-153400/train') #check this put
             print("loaded model weigths from checkpoint")
 
         ray.init()
