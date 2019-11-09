@@ -8,6 +8,7 @@ import datetime
 import multiprocessing as mp
 import ray
 import mario_env
+import moving_dot_env
 import gym
 from baselines import logger
 
@@ -15,7 +16,7 @@ from baselines import logger
 @ray.remote
 class Simulator(object):
     def __init__(self,num_action_repeat):
-        self.env = mario_env.make_train_0()
+        self.env = moving_dot_env.make_train_0()
         self.env.reset()
         self.num_action_repeat=num_action_repeat
 
@@ -234,6 +235,7 @@ class Trainer():
                     self.value_loss_avg(value_loss)
                     self.avg_entropy(entropy)
 
+
             loss_avg_result=self.loss_avg.result()
             policy_loss_avg_result=self.policy_loss_avg.result()
             value_loss_avg_result=self.value_loss_avg.result()
@@ -251,6 +253,7 @@ class Trainer():
                     tf.summary.scalar('policy_loss_avg', data=policy_loss_avg_result, step=train_step)
                     tf.summary.scalar('value_loss_avg', data= value_loss_avg_result, step=train_step)
                     tf.summary.scalar('entropy_avg', data=entropy_avg_result, step=train_step)
+                    tf.summary.scalar('rewards_avg', data=np.average(rewards), step=train_step)
                    # tf.summary.scalar('learning rate', data=learning_rate, step=epoch)
                 # add more scalars
             else:
