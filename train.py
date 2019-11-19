@@ -66,6 +66,8 @@ class Trainer():
         self.log_interval=log_interval
         self.num_action_repeat=num_action_repeat
 
+    if flag.ON_COLAB:
+        tf.enable_eager_execution()
 
 
     def collect_experiance_and_train(self):
