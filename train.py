@@ -66,6 +66,15 @@ class Trainer():
         self.log_interval=log_interval
         self.num_action_repeat=num_action_repeat
 
+        self.negative_log_p_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+
+        self.old_values = 0
+        self.clip_range = clip_range
+
+        self.value_coef = tf.cast(value_coef, dtype="float64")
+        self.entropy_coef = tf.cast(entropy_coef, dtype="float64")
+        self.first_train = True
+
     if flag.ON_COLAB:
         tf.enable_eager_execution()
 
@@ -73,6 +82,7 @@ class Trainer():
     def collect_experiance_and_train(self):
 
         self.new_model=Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
+        self.old_model = Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
         if flag.LOAD:
             self.new_model.load_weights('./models/step760-20191106-153400/train') #check this put
             print("loaded model weigths from checkpoint")
@@ -162,6 +172,7 @@ class Trainer():
                     experience_slice=(arr[index_slice] for arr in (observations_array,returns_array,actions_array,
                                                                    values_array,advantages_array))
                     loss, policy_loss, value_loss, entropy=self.train_model(*experience_slice)
+                    self.old_model.set_weights(self.new_model.get_weights())
                     self.loss_avg(loss)
                     self.policy_loss_avg(policy_loss)
                     self.value_loss_avg(value_loss)
@@ -242,9 +253,81 @@ class Trainer():
                 print("advantages",advantages_array)
                 print("actions",actions_array)
                 print("values",values_array)
-            loss,policy_loss,value_loss,entropy,grads=self.new_model.grad(observations_array, actions_array, rewards_array, values_array,advantages_array)
+            loss,policy_loss,value_loss,entropy,grads=self.grad(observations_array, actions_array, rewards_array, values_array,advantages_array)
             self.optimizer.apply_gradients(zip(grads, self.new_model.trainable_variables))
             return loss,policy_loss,value_loss,entropy
+
+
+
+
+    def compute_loss(self, input_observations, rewards, actions, values, advantages):
+        #print("second forward pass")
+        self.new_model.forward_pass(input_observations)
+        predicted_value=self.new_model.predicted_value #had to do this, because if I use values gradiants will dissapear
+        # predicted_value=values
+        # if flag.DEBUG:
+        #     print("policy",policy)
+        #     print("predicted value",predicted_value)
+        self.old_model.forward_pass(input_observations)
+        old_negative_logp=self.negative_log_p_object(actions,self.old_model.policy)
+        #  clipped_vf= old_value + tf.clip_by_value(train_model.vf - old_value , -clip_range , clip_range)
+        # value_loss = tf.losses.mse(predicted_value, tf.cast(rewards, dtype="float64"))
+        value_loss=tf.square(predicted_value - tf.cast(rewards, dtype="float64"))
+        if not self.first_train and flag.VALUE_CLIP:
+            clipped_value = self.old_values + tf.clip_by_value(predicted_value - self.old_values, -self.clip_range,
+                                                               self.clip_range)
+            clipped_value_loss = tf.square(clipped_value - tf.cast(rewards, dtype="float64"))
+            value_loss = tf.reduce_mean(tf.maximum(value_loss, clipped_value_loss))
+        else:
+            value_loss = tf.reduce_mean(value_loss)
+
+        negative_log_p = self.negative_log_p_object(actions, self.new_model.policy)
+
+        if self.first_train:
+            ratio = tf.cast(1, dtype="float64")
+            self.first_train=False
+        else:
+            # print("negative log",negative_log_p)
+            # print("old_negative_log",old_negative_log_p)
+            # print("POLICY",self.policy)
+            ratio = tf.exp(negative_log_p - old_negative_logp)
+
+
+        # print("ratio is",ratio)
+        # print("advantages are",advantages)
+        self.old_values=predicted_value
+        policy_loss = advantages * ratio
+        clipped_policy_loss = advantages * tf.clip_by_value(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range)
+        selected_policy_loss = -tf.reduce_mean(tf.minimum(policy_loss, clipped_policy_loss))
+        entropy = tf.reduce_mean(self.new_model.dist.entropy())
+        #value_coef_tensor = tf.convert_to_tensor(self.value_coef, dtype="float64")
+        loss = selected_policy_loss + (self.value_coef * value_loss) - (self.entropy_coef * entropy)
+        #loss = selected_policy_loss -(self.entropy_coef * entropy)
+        # print("value_loss",value_loss)
+        # print("loss",loss)
+        # print("selected_policy_loss", selected_policy_loss)
+
+        if flag.DEBUG:
+
+            print("value_loss", value_loss)
+            print("negative_log", negative_log_p)
+            print("ratio", ratio)
+            print("policy_loss", policy_loss)
+            print("clipped_policy_loss", clipped_policy_loss)
+            print("selected_policy_loss", selected_policy_loss)
+            print("LOOSSS", loss)
+
+
+        return loss, selected_policy_loss, value_loss, entropy
+
+
+    def grad(self,observations, actions, rewards,values, advantages):
+        with tf.GradientTape() as tape:
+            loss,policy_loss,value_loss,entropy = self.compute_loss(observations, rewards, actions, values,advantages)
+        gradients=tape.gradient(loss, self.new_model.trainable_variables)
+        gradients = [(tf.clip_by_value(grad, -0.5, 0.5))
+                     for grad in gradients]
+        return loss,policy_loss,value_loss,entropy,gradients
 
 
 
