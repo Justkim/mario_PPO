@@ -108,14 +108,14 @@ class Model(tf.keras.Model):
             self.first_train=False
         else:
             old_negative_log_p = self.negative_log_p_object(actions, self.old_policy)
-            print("negative log",negative_log_p)
-            print("old_negative_log",old_negative_log_p)
-            print("POLICY",self.policy)
+            # print("negative log",negative_log_p)
+            # print("old_negative_log",old_negative_log_p)
+            # print("POLICY",self.policy)
             ratio = tf.exp(negative_log_p - old_negative_log_p)
 
 
-        print("ratio is",ratio)
-        print("advantages are",advantages)
+        # print("ratio is",ratio)
+        # print("advantages are",advantages)
         self.old_values=predicted_value
         policy_loss = advantages * ratio
         clipped_policy_loss = advantages * tf.clip_by_value(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range)

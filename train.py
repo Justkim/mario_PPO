@@ -207,7 +207,7 @@ class Trainer():
                 self.new_model.save_weights('./models/step'+str(train_step)+'-'+self.current_time+'/'+'train')
 
     def compute_advantage(self, rewards, values, dones):
-        print("rewards are",rewards)
+        # print("rewards are",rewards)
         advantages = []
         last_advantage = 0
         for step in reversed(range(self.num_game_steps)):
