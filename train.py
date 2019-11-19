@@ -150,7 +150,7 @@ class Trainer():
             # print("input actions shape", actions_array.shape)
             # print("input advantages shape", advantages_array.shape)
             # print("values shape", values_array.shape)
-            values_array=values_array.flatten()
+            values_array=values_array.flatten(1)
             # returns_array = returns_array.flatten()
 
             # print("input observations shape", observations_array.shape)
@@ -233,7 +233,7 @@ class Trainer():
         if flag.USE_GAE:
             advantages.reverse()
         advantages=np.array(advantages)
-        returns=advantages+values.flatten()[-1:]
+        returns=advantages+values.flatten(1)[-1:]
         return advantages,returns
 
 
