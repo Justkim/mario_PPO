@@ -292,19 +292,19 @@ def make_test():
 import time
 
 
-
-
+#
+#
 #
 # new_env=make_env(0)
 # new_env.reset()
-# for i in range(0,80):
-#
-#     a,b,c,d=new_env.step(2)
-#     print(a.shape)
-#     print("reward is", b)
+# while True:
+#     a,b,c,d=new_env.step(3)
+#     a, b1, c, d = new_env.step(3)
+#     a, b2, c, d = new_env.step(3)
+#     print("reward is", b+b1+b2)
 #     new_env.render()
 #
-#     time.sleep(0.05)
+#     time.sleep(1)
 
 #
 # while True:

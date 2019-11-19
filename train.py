@@ -33,92 +33,6 @@ class Simulator(object):
         return self.env.reset()
 
 
-
-
-class Runner():
-    def __init__(self,num_steps,env,discount_factor,lam,model,queue):
-        self.q = queue
-        self.num_steps=num_steps
-        self.discount_factor=discount_factor
-        self.lam=lam
-        self.env=env
-        self.total_steps=0
-        self.current_observation = env.reset()
-        self.model=model
-        self.remote_env=Simulator.remote()
-
-
-
-    def run(self):
-
-        import tensorflow as tf
-        rewards = []
-        observations = []
-        dones = []
-        actions=[]
-        values=[]
-        max_step_exceed=False
-        print("hehe")
-        for j in range(self.num_steps):
-            print("lay")
-            observations.append(self.current_observation)
-            # self.lock.acquire()
-            #new_model = Model(7,1,1,1)
-            predicted_action, value = self.model.step(self.current_observation)
-
-            # self.lock.release()
-
-            print("lala")
-            actions.append(predicted_action[0]) #check this for multiple envs version
-            values.append(value[0])
-            if flag.MARIO_ENV:
-                print("1")
-                returned_object=self.remote_env.step.remote(predicted_action[0])
-                observation, reward, done, info = ray.get(returned_object)
-                print("2")
-            else:
-                observation, reward, done, info = self.env.step(predicted_action)
-            if flag.SHOW_GAME:
-                self.env.render()
-            self.current_observation = observation
-            observations.append(self.current_observation)
-            rewards.append(reward)
-            dones.append(done)
-            # self.total_steps+=1
-            # if self.total_steps>=self.max_steps:
-            #     max_step_exceed=True
-
-            if done:
-                self.current_observation = self.env.reset()
-                print("Done")
-
-
-        advantages=self.compute_advantage(rewards, values, dones)
-        # self.q.put((observations, rewards, actions, values, advantages, dones))
-        self.q.put((1))
-        self.q.close()
-
-        #return observations, rewards, actions, values, advantages, dones
-
-    def compute_advantage(self,rewards,values,dones):
-        advantages = []
-        last_advantage=0
-        for step in reversed(range(self.num_steps)):
-            if dones[step] or step==(self.num_steps-1):
-                advantages.append(rewards[step] - values[step])
-            else:
-                if flag.USE_GAE:
-                    delta=rewards[step] + self.discount_factor * values[step + 1] - values[step]
-                    advantage= last_advantage = delta + self.discount_factor * self.lam * last_advantage
-                    advantages.append(advantage)
-                else:
-                    advantages.append(rewards[step] + self.discount_factor * values[step + 1] - values[step])
-        if flag.USE_GAE:
-            advantages.reverse()
-
-        return advantages
-
-
 class Trainer():
     def __init__(self,num_training_steps,num_env,num_game_steps,num_epoch,
                  learning_rate,discount_factor,env,num_action,
@@ -167,12 +81,11 @@ class Trainer():
         returned_observations = []
 
         for i in range(self.num_env):
-            #new_simulator=Simulator()
             runners.append(Simulator.remote(self.num_action_repeat))
             returned_observations.append(runners[i].reset.remote())
         for i in range(self.num_env):
             current_observations.append(ray.get(returned_observations[i]))
-        current_observations_array=np.array(current_observations)
+
 
 
         for train_step in range(self.training_steps):
@@ -181,55 +94,72 @@ class Trainer():
             self.policy_loss_avg = tf.keras.metrics.Mean()
             self.value_loss_avg = tf.keras.metrics.Mean()
             self.avg_entropy = tf.keras.metrics.Mean()
-            experiences=[]
             returned_objects=[]
-            #self.new_model.step(np.array(current_observations)
             observations=[]
             rewards=[]
             dones=[]
-            # for i in range(self.num_env):
-            #     observations.append([])
-            #     rewards.append([])
-            #     dones.append([])
-            current_observations_list=[]
             values=[]
             actions=[]
-            # done_flags=[False for x in range(0,self.num_env)]
-            observations.extend(numpy.ndarray.tolist(current_observations_array))
+            experiences = []
+            total_experiances=[]
             for game_step in range(self.num_game_steps):
-                actions_, values_ = self.new_model.step(np.array(current_observations_array))
-                values.extend(np.ndarray.tolist(values_))
-                actions.extend(np.ndarray.tolist(actions_))
-                current_observations_list = []
+
+                observations.extend(current_observations)
+                current_observations=np.array(current_observations)
+                decided_actions, predicted_values = self.new_model.step(current_observations)
+                values.append(predicted_values)
+                actions.extend(decided_actions)
+                experiences=[]
                 for i in range(self.num_env):
-                        returned_objects.append(runners[i].step.remote(actions_[i]))
-                        experiences=ray.get(returned_objects[i])
-                        rewards.append(experiences[1])
-                        dones.append(experiences[2])
-                        observations.append(experiences[0])
-                        current_observations_list.append(experiences[0])
-                current_observations_array=np.array(current_observations_list)
+                        returned_objects.append(runners[i].step.remote(decided_actions[i]))
+                        experiences.append(ray.get(returned_objects[i]))
+                current_observations=[each[0] for each in experiences]
+                rewards.append([each[1] for each in experiences])
+                dones.append([each[2] for each in experiences])
 
-            # observations_array = np.array([each[0] for each in experiences], ndmin=3)
-            # rewards_array = np.array([each[1] for each in experiences])
-            # dones_array = np.array([each[2] for each in experiences])
-            # observations_array=np.array(observations)
-            # rewards_array=np.array(rewards)
-            # dones_array=np.array(dones)
+            decided_actions, predicted_values = self.new_model.step(current_observations)
+            values.append(predicted_values)
 
-        #    exit()
+            observations_array=np.array(observations)
 
-            advantages=self.compute_advantage(rewards,values,dones)
 
-            experience=list(zip(observations,rewards,actions,values,advantages))
+            rewards_array = np.array(rewards)
+            dones_array = np.array(dones)
+
+            values_array=np.array(values)
+
+            actions_array = np.array(actions)
+            advantages_array,returns_array=self.compute_advantage(rewards_array,values_array,dones_array)
+            values_array = values_array[:-1,:]
+
+            # print(values_array.shape)
+            # print("input observations shape", observations_array.shape)
+            # print("input rewards shape", rewards_array.shape)
+            # print("input actions shape", actions_array.shape)
+            # print("input advantages shape", advantages_array.shape)
+            # print("values shape", values_array.shape)
+            values_array=values_array.flatten()
+            # returns_array = returns_array.flatten()
+
+            # print("input observations shape", observations_array.shape)
+            # print("input rewards shape", rewards_array.shape)
+            # print("input actions shape", actions_array.shape)
+            # print("input advantages shape", advantages_array.shape)
+            # print("values shape", values_array.shape)
+
+
+            # actions_array=np.swapaxes(actions_array,0,1)
+            random_indexes=np.arange(self.batch_size)
+            np.random.shuffle(random_indexes)
+
+
             for epoch in range(0,self.num_epoch):
-
                 for n in range(0,self.mini_batch_num):
                     start_index=n*self.mini_batch_size
-                    experiance_slice=experience[start_index:start_index+self.mini_batch_size]
-                    observations, rewards, actions,values,advantages = zip(*experiance_slice)
-
-                    loss, policy_loss, value_loss, entropy=self.train_model(observations,rewards,actions,values,advantages)
+                    index_slice=random_indexes[start_index:start_index+self.mini_batch_size]
+                    experience_slice=(arr[index_slice] for arr in (observations_array,returns_array,actions_array,
+                                                                   values_array,advantages_array))
+                    loss, policy_loss, value_loss, entropy=self.train_model(*experience_slice)
                     self.loss_avg(loss)
                     self.policy_loss_avg(policy_loss)
                     self.value_loss_avg(value_loss)
@@ -275,33 +205,27 @@ class Trainer():
                 self.new_model.save_weights('./models/step'+str(train_step)+'-'+self.current_time+'/'+'train')
 
     def compute_advantage(self, rewards, values, dones):
+        print("rewards are",rewards)
         advantages = []
         last_advantage = 0
-        for env in range(self.num_env):
-            for step in reversed(range(self.num_game_steps)):
-                total_step_index=env*self.num_game_steps+step
-                if dones[total_step_index] or step == (self.num_game_steps - 1):
-                    advantages.append(rewards[ total_step_index] - values[ total_step_index])
-                else:
-                    if flag.USE_GAE:
-                        delta = rewards[ total_step_index] + self.discount_factor * values[ total_step_index + 1] - values[ total_step_index]
-                        advantage = last_advantage = delta + self.discount_factor * self.lam * last_advantage
-                        advantages.append(advantage)
-                    else:
-                        advantages.append(rewards[ total_step_index] + self.discount_factor * values[ total_step_index + 1] - values[ total_step_index])
+        for step in reversed(range(self.num_game_steps)):
+            is_there_a_next_state = 1.0 - dones[step]
+            delta = rewards[step] + is_there_a_next_state * self.discount_factor * values[step + 1] - values[step]
             if flag.USE_GAE:
-                advantages.reverse()
+                    advantage = last_advantage = delta + self.discount_factor * \
+                                                 self.lam * is_there_a_next_state * last_advantage
+                    advantages.extend(advantage)
+            else:
+                    advantages.append(delta)
+        if flag.USE_GAE:
+            advantages.reverse()
+        advantages=np.array(advantages)
+        returns=advantages+values.flatten()[-1:]
+        return advantages,returns
 
-        return advantages
 
+    def train_model(self,observations_array,rewards_array,actions_array,values_array,advantages_array):
 
-    def train_model(self,observations,rewards,actions,values,advantages):
-            #print("observations shape",len(observations))
-            observations_array = np.array(observations)
-            rewards_array = np.array(rewards)
-            actions_array = np.array(actions)
-            advantages_array=np.array(advantages)
-            values_array=np.array(values)
             if flag.USE_STANDARD_ADV:
                 advantages_array=advantages_array.mean() / (advantages_array.std() + 1e-13)
 

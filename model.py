@@ -23,6 +23,7 @@ class Model(tf.keras.Model):
         # self.dist = tf.compat.v1.distributions.Categorical(logits=policy)
         self.softmax_layer=tf.keras.layers.Softmax(name="softmax")
         self.negative_log_p_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+
         self.old_negative_log_p = 0  # make this right for the first run
         self.old_values = 0
         self.clip_range = clip_range
@@ -30,6 +31,7 @@ class Model(tf.keras.Model):
         self.value_coef = tf.cast(value_coef, dtype="float64")
         self.entropy_coef = tf.cast(entropy_coef, dtype="float64")
         self.first_train=True
+        self.old_policy=0
 
 
     def forward_pass(self,input_observations):
@@ -68,30 +70,39 @@ class Model(tf.keras.Model):
     def compute_loss(self, input_observations, rewards, actions, values, advantages):
         #print("second forward pass")
         self.forward_pass(input_observations)
-        predicted_value=self.predicted_value #had to do this, because if I use values gradiants will dissapear
 
+        predicted_value=self.predicted_value #had to do this, because if I use values gradiants will dissapear
+        # predicted_value=values
         # if flag.DEBUG:
         #     print("policy",policy)
         #     print("predicted value",predicted_value)
 
         #  clipped_vf= old_value + tf.clip_by_value(train_model.vf - old_value , -clip_range , clip_range)
         # value_loss = tf.losses.mse(predicted_value, tf.cast(rewards, dtype="float64"))
-        value_loss=tf.keras.losses.mse(predicted_value,  tf.cast(rewards, dtype="float64"))
+        value_loss=tf.square(predicted_value - tf.cast(rewards, dtype="float64"))
         if not self.first_train and flag.VALUE_CLIP:
             clipped_value = self.old_values + tf.clip_by_value(predicted_value - self.old_values, -self.clip_range,
                                                                self.clip_range)
-            clipped_value_loss = tf.losses.mse(clipped_value, tf.cast(rewards, dtype="float64"))
-            value_loss = -tf.reduce_mean(tf.minimum(value_loss, clipped_value_loss))
+            clipped_value_loss = tf.square(clipped_value - tf.cast(rewards, dtype="float64"))
+            value_loss = tf.reduce_mean(tf.maximum(value_loss, clipped_value_loss))
         else:
             value_loss = tf.reduce_mean(value_loss)
 
         negative_log_p = self.negative_log_p_object(actions, self.policy)
+
         if self.first_train:
             ratio = tf.cast(1, dtype="float64")
+            self.first_train=False
         else:
-            ratio = tf.exp(self.old_negative_log_p - negative_log_p)
+            old_negative_log_p = self.negative_log_p_object(actions, self.old_policy)
+            print("negative log",negative_log_p)
+            print("old_negative_log",old_negative_log_p)
+            print("POLICY",self.policy)
+            ratio = tf.exp(negative_log_p - old_negative_log_p)
 
-        self.old_negative_log_p = negative_log_p
+
+        print("ratio is",ratio)
+        print("advantages are",advantages)
         self.old_values=predicted_value
         policy_loss = advantages * ratio
         clipped_policy_loss = advantages * tf.clip_by_value(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range)
@@ -113,14 +124,18 @@ class Model(tf.keras.Model):
             print("clipped_policy_loss", clipped_policy_loss)
             print("selected_policy_loss", selected_policy_loss)
             print("LOOSSS", loss)
+        self.old_policy = self.policy
 
-        return loss, policy_loss, value_loss, entropy
+        return loss, selected_policy_loss, value_loss, entropy
 
 
     def grad(self,observations, actions, rewards,values, advantages):
         with tf.GradientTape() as tape:
             loss,policy_loss,value_loss,entropy = self.compute_loss(observations, rewards, actions, values,advantages)
-        return loss,policy_loss,value_loss,entropy, tape.gradient(loss, self.trainable_variables)
+        gradients=tape.gradient(loss, self.trainable_variables)
+        gradients = [(tf.clip_by_value(grad, -0.5, 0.5))
+                     for grad in gradients]
+        return loss,policy_loss,value_loss,entropy,gradients
 
 
 
