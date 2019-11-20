@@ -11,6 +11,7 @@ import mario_env
 import moving_dot_env
 import gym
 from baselines import logger
+import cv2
 
 
 @ray.remote
@@ -83,6 +84,7 @@ class Trainer():
 
         self.new_model=Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
         self.old_model = Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
+        self.old_model.set_weights(self.new_model.get_weights())
         if flag.LOAD:
             self.new_model.load_weights('./models/step760-20191106-153400/train') #check this put
             print("loaded model weigths from checkpoint")
@@ -118,6 +120,12 @@ class Trainer():
 
                 observations.extend(current_observations)
                 current_observations=np.array(current_observations)
+                # original=current_observations[0,0,:,:]
+                # duplicate=current_observations[0, 1, :, :]
+                # difference = cv2.subtract(original, duplicate)
+                # if cv2.countNonZero(difference) == 0 :
+                #     print("The images are completely Equal")
+                # input()
                 decided_actions, predicted_values = self.new_model.step(current_observations)
                 values.append(predicted_values)
                 actions.extend(decided_actions)
@@ -126,22 +134,20 @@ class Trainer():
                         returned_objects.append(runners[i].step.remote(decided_actions[i]))
                         experiences.append(ray.get(returned_objects[i]))
                 current_observations=[each[0] for each in experiences]
+                current_observations=np.array(current_observations)
                 rewards.append([each[1] for each in experiences])
                 dones.append([each[2] for each in experiences])
 
-            decided_actions, predicted_values = self.new_model.step(current_observations)
+            decided_actions, predicted_values = self.new_model.step(np.array(current_observations))
             values.append(predicted_values)
-
             observations_array=np.array(observations)
-
-
             rewards_array = np.array(rewards)
             dones_array = np.array(dones)
-
             values_array=np.array(values)
-
             actions_array = np.array(actions)
+
             advantages_array,returns_array=self.compute_advantage(rewards_array,values_array,dones_array)
+
             values_array = values_array[:-1,:]
 
             # print(values_array.shape)
@@ -150,7 +156,7 @@ class Trainer():
             # print("input actions shape", actions_array.shape)
             # print("input advantages shape", advantages_array.shape)
             # print("values shape", values_array.shape)
-            values_array=values_array.flatten(1)
+            values_array=values_array.flatten(0)
             # returns_array = returns_array.flatten()
 
             # print("input observations shape", observations_array.shape)
@@ -164,15 +170,15 @@ class Trainer():
             random_indexes=np.arange(self.batch_size)
             np.random.shuffle(random_indexes)
 
-
             for epoch in range(0,self.num_epoch):
                 for n in range(0,self.mini_batch_num):
                     start_index=n*self.mini_batch_size
                     index_slice=random_indexes[start_index:start_index+self.mini_batch_size]
                     experience_slice=(arr[index_slice] for arr in (observations_array,returns_array,actions_array,
-                                                                   values_array,advantages_array))
+                                                                   advantages_array))
+                    last_weights = self.new_model.get_weights()
                     loss, policy_loss, value_loss, entropy=self.train_model(*experience_slice)
-                    self.old_model.set_weights(self.new_model.get_weights())
+                    self.old_model.set_weights(last_weights)
                     self.loss_avg(loss)
                     self.policy_loss_avg(policy_loss)
                     self.value_loss_avg(value_loss)
@@ -233,35 +239,34 @@ class Trainer():
         if flag.USE_GAE:
             advantages.reverse()
         advantages=np.array(advantages)
-        returns=advantages+values.flatten(1)[-1:]
+        returns=advantages+values.flatten(0)[-1:]
         return advantages,returns
 
 
-    def train_model(self,observations_array,rewards_array,actions_array,values_array,advantages_array):
+    def train_model(self,observations_array,returns_array,actions_array,advantages_array):
 
             if flag.USE_STANDARD_ADV:
                 advantages_array=advantages_array.mean() / (advantages_array.std() + 1e-13)
 
             if flag.DEBUG:
                 print("input observations shape", observations_array.shape)
-                print("input rewards shape", rewards_array.shape)
+                print("input rewards shape", returns_array.shape)
                 print("input actions shape", actions_array.shape)
                 print("input advantages shape", advantages_array.shape)
-                print("values shape",values_array.shape)
 
-                print("rewards",rewards_array)
+                print("rewards",returns_array)
                 print("advantages",advantages_array)
                 print("actions",actions_array)
-                print("values",values_array)
-            loss,policy_loss,value_loss,entropy,grads=self.grad(observations_array, actions_array, rewards_array, values_array,advantages_array)
+
+            loss,policy_loss,value_loss,entropy,grads=self.grad(observations_array, returns_array,actions_array,advantages_array)
             self.optimizer.apply_gradients(zip(grads, self.new_model.trainable_variables))
             return loss,policy_loss,value_loss,entropy
 
 
 
 
-    def compute_loss(self, input_observations, rewards, actions, values, advantages):
-        #print("second forward pass")
+    def compute_loss(self, input_observations, returns, actions,advantages):
+
         self.new_model.forward_pass(input_observations)
         predicted_value=self.new_model.predicted_value #had to do this, because if I use values gradiants will dissapear
         # predicted_value=values
@@ -272,11 +277,11 @@ class Trainer():
         old_negative_logp=self.negative_log_p_object(actions,self.old_model.policy)
         #  clipped_vf= old_value + tf.clip_by_value(train_model.vf - old_value , -clip_range , clip_range)
         # value_loss = tf.losses.mse(predicted_value, tf.cast(rewards, dtype="float64"))
-        value_loss=tf.square(predicted_value - tf.cast(rewards, dtype="float64"))
+        value_loss=tf.square(predicted_value - tf.cast(returns, dtype="float64"))
         if not self.first_train and flag.VALUE_CLIP:
             clipped_value = self.old_values + tf.clip_by_value(predicted_value - self.old_values, -self.clip_range,
                                                                self.clip_range)
-            clipped_value_loss = tf.square(clipped_value - tf.cast(rewards, dtype="float64"))
+            clipped_value_loss = tf.square(clipped_value - tf.cast(returns, dtype="float64"))
             value_loss = tf.reduce_mean(tf.maximum(value_loss, clipped_value_loss))
         else:
             value_loss = tf.reduce_mean(value_loss)
@@ -321,9 +326,9 @@ class Trainer():
         return loss, selected_policy_loss, value_loss, entropy
 
 
-    def grad(self,observations, actions, rewards,values, advantages):
+    def grad(self,observations,returns,actions, advantages):
         with tf.GradientTape() as tape:
-            loss,policy_loss,value_loss,entropy = self.compute_loss(observations, rewards, actions, values,advantages)
+            loss,policy_loss,value_loss,entropy = self.compute_loss(observations, returns, actions,advantages)
         gradients=tape.gradient(loss, self.new_model.trainable_variables)
         gradients = [(tf.clip_by_value(grad, -0.5, 0.5))
                      for grad in gradients]
