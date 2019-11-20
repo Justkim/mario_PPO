@@ -16,18 +16,25 @@ class Model(tf.keras.Model):
         super(Model,self).__init__(name='')
         tf.keras.backend.set_floatx('float64')
         self.num_action=num_action
-        if flag.MARIO_ENV:
-            channels_order = "channels_first"
-        else:
-            channels_order = "channels_first"
+        channels_order = "channels_first"
         # self.conv1=tf.keras.layers.Conv2D(32, 8, strides=(4,4),activation='elu',data_format=channels_order,name="conv1")
         # self.conv2 = tf.keras.layers.Conv2D(64, 4, strides=(1,1),activation='elu',data_format=channels_order,name="conv2")
         # self.conv3 = tf.keras.layers.Conv2D(64, 3, strides=(1,1),activation='elu',data_format=channels_order,name="conv3")
-        self.conv1=make_conv_layer(32, 8, channels_order, "conv1", 4)
-        self.conv2=make_conv_layer(64, 4, channels_order, "conv2", 1)
-        self.conv3=make_conv_layer(64, 3, channels_order, "conv3", 1)
-        self.flatten=tf.keras.layers.Flatten(name="flatten")
-        self.fc1=make_dense_layer(512, "fc1", activation='relu')
+        if not flag.MODEL_ARCHITECTURE=="a3c":
+            self.conv1=make_conv_layer(32, 8, channels_order, "conv1", 4)
+            self.conv2=make_conv_layer(64, 4, channels_order, "conv2", 2)
+            self.conv3=make_conv_layer(64, 3, channels_order, "conv3", 1)
+            self.flatten = tf.keras.layers.Flatten(name="flatten")
+            self.fc1 = make_dense_layer(512, "fc1", activation='relu')
+        else:
+        # A3C PAPER:
+            self.conv1 = make_conv_layer(16, 8, channels_order, "conv1", 4)
+            self.conv2 = make_conv_layer(32, 4, channels_order, "conv2", 2)
+            self.flatten = tf.keras.layers.Flatten(name="flatten")
+            self.fc1 = make_dense_layer(256, "fc1", activation='relu')
+        #
+        #
+
         #self.fc1=tf.keras.layers.Dense(512,activation='relu',name="fc1")
         self.value=make_dense_layer(1,"value_layer")
         #self.value=tf.keras.layers.Dense(1,name="value_layer")
@@ -40,23 +47,25 @@ class Model(tf.keras.Model):
 
 
     def forward_pass(self,input_observations):
-       # print(input_observations.shape)
+        #print(input_observations.shape)
         x=self.conv1(input_observations)
         #print(x.shape)
         x=self.conv2(x)
-        #print(x.shape)
-        x=self.conv3(x)
+        if not flag.MODEL_ARCHITECTURE=="a3c":
+            x=self.conv3(x)
         #print(x.shape)
         x=self.flatten(x)
         #print(x.shape)
         x=self.fc1(x)
         #print(x.shape)
         self.predicted_value=self.value(x)[:,0] #try sum values in one axis
+       # print(self.predicted_value.shape)
         #print(predicted_value.shape)
         self.policy=self.policy_layer(x)
+        #print(self.policy.shape)
         #self.policy=tf.maximum(self.policy_layer(x),1e-13)
         self.dist = tfp.distributions.Categorical(self.policy)
-        self.action=self.dist.sample()
+        #self.action=self.dist.sample()
         self.probs=(self.softmax_layer(self.policy)).numpy()
         randoms= np.expand_dims(np.random.rand(self.probs.shape[0]),axis=1)
         self.action=(self.probs.cumsum(axis=1)>randoms).argmax(axis=1)
