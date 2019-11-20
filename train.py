@@ -52,7 +52,8 @@ class Trainer():
         self.entropy_coef = entropy_coef
         self.mini_batch_size=mini_batch_size
         self.num_action=num_action
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+        # self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+        self.optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.learning_rate)
         assert self.batch_size % self.mini_batch_size == 0
         self.mini_batch_num=int(self.batch_size / self.mini_batch_size)
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
