@@ -1,4 +1,4 @@
-from model import *
+from ppo_model import *
 class Player:
     def __init__(self,env,load_path):
         self.env=env

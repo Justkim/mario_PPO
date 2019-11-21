@@ -1,6 +1,6 @@
 import numpy
 import random
-from model import Model
+from ppo_model import Model
 import tensorflow as tf
 import numpy as np
 import flag
@@ -127,6 +127,7 @@ class Trainer():
                 #     print("The images are completely Equal")
                 # input()
                 decided_actions, predicted_values = self.new_model.step(np.array(current_observations))
+                #compute intrinsic reward
                 # decided_actions2, predicted_values2 = self.new_model.step(np.array(observations))
                 # print(predicted_values1)
                 # print(predicted_values2)
