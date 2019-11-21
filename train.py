@@ -272,18 +272,22 @@ class Trainer():
                 print("advantages",advantages_array)
                 print("actions",actions_array)
 
-            loss,policy_loss,value_loss,entropy,grads=self.grad(observations_array, returns_array,actions_array,advantages_array)
+            loss,policy_loss,value_loss,entropy,grads=self.grad(observations_array, returns_array,values_array,actions_array,advantages_array)
             self.optimizer.apply_gradients(zip(grads, self.new_model.trainable_variables))
             return loss,policy_loss,value_loss,entropy
 
 
 
 
-    def compute_loss(self, input_observations, returns, actions,advantages):
+    def compute_loss(self, input_observations, returns,values, actions,advantages):
 
-        actions,predicted_value=self.new_model.forward_pass(input_observations)
+        actions_,predicted_value=self.new_model.forward_pass(input_observations)
+
         # predicted_value=self.new_model.predicted_value #had to do this, because if I use values gradiants will dissapear
-        # print("values from forward pass",predicted_value)
+        print("values from forward pass",predicted_value)
+        print("returns",returns)
+
+
         # print("----------------------------------")
         # predicted_value=values
         # if flag.DEBUG:
@@ -328,7 +332,7 @@ class Trainer():
         # print("loss",loss)
         # print("selected_policy_loss", selected_policy_loss)
 
-        if flag.DEBUG:
+        if True:
 
             print("value_loss", value_loss)
             print("negative_log", negative_log_p)
@@ -342,9 +346,9 @@ class Trainer():
         return loss, selected_policy_loss, value_loss, entropy
 
 
-    def grad(self,observations,returns,actions, advantages):
+    def grad(self,observations,returns,values,actions, advantages):
         with tf.GradientTape() as tape:
-            loss,policy_loss,value_loss,entropy = self.compute_loss(observations, returns, actions,advantages)
+            loss,policy_loss,value_loss,entropy = self.compute_loss(observations, returns, values,actions,advantages)
         gradients=tape.gradient(loss, self.new_model.trainable_variables)
         gradients = [(tf.clip_by_value(grad, -0.5, 0.5))
                      for grad in gradients]
