@@ -109,7 +109,7 @@ class Trainer():
             self.policy_loss_avg = tf.keras.metrics.Mean()
             self.value_loss_avg = tf.keras.metrics.Mean()
             self.avg_entropy = tf.keras.metrics.Mean()
-            returned_objects=[]
+
             observations=[]
             rewards=[]
             dones=[]
@@ -118,16 +118,20 @@ class Trainer():
             experiences = []
             total_experiances=[]
             for game_step in range(self.num_game_steps):
-
+                returned_objects = []
                 observations.extend(current_observations)
-                current_observations=np.array(current_observations)
                 # original=current_observations[0,0,:,:]
                 # duplicate=current_observations[0, 1, :, :]
                 # difference = cv2.subtract(original, duplicate)
                 # if cv2.countNonZero(difference) == 0 :
                 #     print("The images are completely Equal")
                 # input()
-                decided_actions, predicted_values = self.new_model.step(current_observations)
+                decided_actions, predicted_values = self.new_model.step(np.array(current_observations))
+                # decided_actions2, predicted_values2 = self.new_model.step(np.array(observations))
+                # print(predicted_values1)
+                # print(predicted_values2)
+                # print("KKKKKKKKKKK")
+                # print("lala",predicted_values)
                 values.append(predicted_values)
                 actions.extend(decided_actions)
                 experiences=[]
@@ -149,7 +153,7 @@ class Trainer():
 
             advantages_array,returns_array=self.compute_advantage(rewards_array,values_array,dones_array)
 
-            values_array = values_array[:-1,:]
+            # values_array = values_array[:-1,:]
 
             # print(values_array.shape)
             # print("input observations shape", observations_array.shape)
@@ -157,7 +161,7 @@ class Trainer():
             # print("input actions shape", actions_array.shape)
             # print("input advantages shape", advantages_array.shape)
             # print("values shape", values_array.shape)
-            values_array=values_array.flatten(0)
+            # values_array=values_array.flatten(0)
             # returns_array = returns_array.flatten()
 
             # print("input observations shape", observations_array.shape)
@@ -165,6 +169,9 @@ class Trainer():
             # print("input actions shape", actions_array.shape)
             # print("input advantages shape", advantages_array.shape)
             # print("values shape", values_array.shape)
+            values_array=values_array[:-1]
+            values_array=values_array.flatten()
+            # print("total values from steps",values_array)
 
 
             # actions_array=np.swapaxes(actions_array,0,1)
@@ -175,7 +182,7 @@ class Trainer():
                 for n in range(0,self.mini_batch_num):
                     start_index=n*self.mini_batch_size
                     index_slice=random_indexes[start_index:start_index+self.mini_batch_size]
-                    experience_slice=(arr[index_slice] for arr in (observations_array,returns_array,actions_array,
+                    experience_slice=(arr[index_slice] for arr in (observations_array,returns_array,values_array,actions_array,
                                                                    advantages_array))
                     last_weights = self.new_model.get_weights()
                     loss, policy_loss, value_loss, entropy=self.train_model(*experience_slice)
@@ -223,8 +230,12 @@ class Trainer():
 
             if train_step % self.save_interval==0:
                 self.new_model.save_weights('./models/step'+str(train_step)+'-'+self.current_time+'/'+'train')
+            #input()
 
     def compute_advantage(self, rewards, values, dones):
+        print("ATTT",values.shape)
+        print(rewards.shape)
+        print(dones.shape)
         # print("rewards are",rewards)
         advantages = []
         last_advantage = 0
@@ -240,14 +251,16 @@ class Trainer():
         if flag.USE_GAE:
             advantages.reverse()
         advantages=np.array(advantages)
-        returns=advantages+values.flatten(0)[-1:]
+        values=values[:-1]
+        returns=advantages+values.flatten(0)
         return advantages,returns
 
 
-    def train_model(self,observations_array,returns_array,actions_array,advantages_array):
+    def train_model(self,observations_array,returns_array,values_array,actions_array,advantages_array):
 
             if flag.USE_STANDARD_ADV:
                 advantages_array=advantages_array.mean() / (advantages_array.std() + 1e-13)
+            # print("values from steps",values_array)
 
             if flag.DEBUG:
                 print("input observations shape", observations_array.shape)
@@ -268,8 +281,10 @@ class Trainer():
 
     def compute_loss(self, input_observations, returns, actions,advantages):
 
-        self.new_model.forward_pass(input_observations)
-        predicted_value=self.new_model.predicted_value #had to do this, because if I use values gradiants will dissapear
+        actions,predicted_value=self.new_model.forward_pass(input_observations)
+        # predicted_value=self.new_model.predicted_value #had to do this, because if I use values gradiants will dissapear
+        # print("values from forward pass",predicted_value)
+        # print("----------------------------------")
         # predicted_value=values
         # if flag.DEBUG:
         #     print("policy",policy)

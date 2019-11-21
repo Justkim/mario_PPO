@@ -43,8 +43,7 @@ class PreprocessFrame(gym.ObservationWrapper):
         self.height = 96
         self.observation_space = gym.spaces.Box(low=0, high=255,
                                                 shape=(self.height, self.width, 1), dtype=np.uint8)
-        self.frame_deque = deque([np.zeros((96, 96)), np.zeros((96, 96)), np.zeros((96, 96)), np.zeros((96, 96))],
-                                 maxlen=4)
+        self.frame_deque = deque([np.zeros((96, 96)), np.zeros((96, 96)), np.zeros((96, 96)), np.zeros((96, 96))],maxlen=4)
 
 
     def observation(self, frame):
