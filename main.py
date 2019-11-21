@@ -19,10 +19,10 @@ else:
     env = gym_minigrid.wrappers.StateBonus(env)
 
 if flag.TRAIN:
-    new_trainer=Trainer(num_training_steps=20000,num_env=1,num_game_steps=4,num_epoch=3,learning_rate=0.00025
+    new_trainer=Trainer(num_training_steps=20000,num_env=16,num_game_steps=64,num_epoch=3,learning_rate=0.00025
                         ,discount_factor=0.99,env=env,num_action=5,clip_range=0.2,value_coef=0.5,save_interval=50,
                         log_interval=10,
-                        entropy_coef=0.02,lam=0.95,mini_batch_size=4,num_action_repeat=1)
+                        entropy_coef=0.02,lam=0.95,mini_batch_size=32,num_action_repeat=1)
     new_trainer.collect_experiance_and_train()
 elif flag.PLAY:
     env = moving_dot_env.make_train_0()
