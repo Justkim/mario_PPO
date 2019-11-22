@@ -1,6 +1,6 @@
 import numpy
 import random
-from ppo_model import Model
+from model import Model
 import tensorflow as tf
 import numpy as np
 import flag
@@ -12,6 +12,7 @@ import moving_dot_env
 import gym
 from baselines import logger
 import cv2
+from rnd_model import TargetModel,PredictorModel
 
 
 @ray.remote
@@ -85,6 +86,9 @@ class Trainer():
 
         self.new_model=Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
         self.old_model = Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
+        self.target_model=TargetModel()
+        self.predictorModel=PredictorModel()
+
         self.old_model.set_weights(self.new_model.get_weights())
         if flag.LOAD:
             self.new_model.load_weights('./models/step760-20191106-153400/train') #check this put
@@ -104,7 +108,6 @@ class Trainer():
 
 
         for train_step in range(self.training_steps):
-
             self.loss_avg = tf.keras.metrics.Mean()
             self.policy_loss_avg = tf.keras.metrics.Mean()
             self.value_loss_avg = tf.keras.metrics.Mean()
@@ -127,7 +130,9 @@ class Trainer():
                 #     print("The images are completely Equal")
                 # input()
                 decided_actions, predicted_values = self.new_model.step(np.array(current_observations))
-                #compute intrinsic reward
+                target_value=self.target_model.forward_pass(np.array(current_observations))
+                predictor_value=self.predictor_model.forward_pass(np.array(current_observations))
+
                 # decided_actions2, predicted_values2 = self.new_model.step(np.array(observations))
                 # print(predicted_values1)
                 # print(predicted_values2)
@@ -173,16 +178,21 @@ class Trainer():
             values_array=values_array[:-1]
             values_array=values_array.flatten()
             # print("total values from steps",values_array)
-
+            if flag.DEBUG:
+                print("all actions are",actions)
 
             # actions_array=np.swapaxes(actions_array,0,1)
             random_indexes=np.arange(self.batch_size)
             np.random.shuffle(random_indexes)
 
             for epoch in range(0,self.num_epoch):
+                # print("----------------next epoch----------------")
                 for n in range(0,self.mini_batch_num):
+                    # print("----------------next mini batch-------------")
                     start_index=n*self.mini_batch_size
                     index_slice=random_indexes[start_index:start_index+self.mini_batch_size]
+                    if flag.DEBUG:
+                        print("indexed choosen are:",index_slice)
                     experience_slice=(arr[index_slice] for arr in (observations_array,returns_array,values_array,actions_array,
                                                                    advantages_array))
                     last_weights = self.new_model.get_weights()
@@ -192,6 +202,7 @@ class Trainer():
                     self.policy_loss_avg(policy_loss)
                     self.value_loss_avg(value_loss)
                     self.avg_entropy(entropy)
+            # print("----------------next training step--------------")
 
 
             loss_avg_result=self.loss_avg.result()
@@ -234,9 +245,10 @@ class Trainer():
             #input()
 
     def compute_advantage(self, rewards, values, dones):
-        print("ATTT",values.shape)
-        print(rewards.shape)
-        print(dones.shape)
+        if flag.DEBUG:
+            print("---------computing advantage---------")
+            print("rewards are",rewards)
+            print("values from steps are",values)
         # print("rewards are",rewards)
         advantages = []
         last_advantage = 0
@@ -246,14 +258,19 @@ class Trainer():
             if flag.USE_GAE:
                     advantage = last_advantage = delta + self.discount_factor * \
                                                  self.lam * is_there_a_next_state * last_advantage
-                    advantages.extend(advantage)
+                    advantages.append(advantage)
             else:
                     advantages.append(delta)
         if flag.USE_GAE:
             advantages.reverse()
+
         advantages=np.array(advantages)
+        advantages = advantages.flatten()
         values=values[:-1]
         returns=advantages+values.flatten(0)
+        if flag.DEBUG:
+            print("all advantages are",advantages)
+            print("all returns are",returns)
         return advantages,returns
 
 
@@ -269,22 +286,27 @@ class Trainer():
                 print("input actions shape", actions_array.shape)
                 print("input advantages shape", advantages_array.shape)
 
-                print("rewards",returns_array)
+                print("returns",returns_array)
                 print("advantages",advantages_array)
                 print("actions",actions_array)
 
-            loss,policy_loss,value_loss,entropy,grads=self.grad(observations_array, returns_array,actions_array,advantages_array)
+            loss,policy_loss,value_loss,entropy,grads=self.grad(observations_array, returns_array,values_array,actions_array,advantages_array)
             self.optimizer.apply_gradients(zip(grads, self.new_model.trainable_variables))
             return loss,policy_loss,value_loss,entropy
 
 
 
 
-    def compute_loss(self, input_observations, returns, actions,advantages):
+    def compute_loss(self, input_observations, returns,values, actions,advantages):
 
-        actions,predicted_value=self.new_model.forward_pass(input_observations)
+        actions_,predicted_value=self.new_model.forward_pass(input_observations)
+
         # predicted_value=self.new_model.predicted_value #had to do this, because if I use values gradiants will dissapear
-        # print("values from forward pass",predicted_value)
+        if flag.DEBUG:
+            print("values from forward pass",predicted_value)
+            print("returns",returns)
+
+
         # print("----------------------------------")
         # predicted_value=values
         # if flag.DEBUG:
@@ -343,14 +365,13 @@ class Trainer():
         return loss, selected_policy_loss, value_loss, entropy
 
 
-    def grad(self,observations,returns,actions, advantages):
+    def grad(self,observations,returns,values,actions, advantages):
         with tf.GradientTape() as tape:
-            loss,policy_loss,value_loss,entropy = self.compute_loss(observations, returns, actions,advantages)
+            loss,policy_loss,value_loss,entropy = self.compute_loss(observations, returns, values,actions,advantages)
         gradients=tape.gradient(loss, self.new_model.trainable_variables)
         gradients = [(tf.clip_by_value(grad, -0.5, 0.5))
                      for grad in gradients]
         return loss,policy_loss,value_loss,entropy,gradients
-
 
 
 
