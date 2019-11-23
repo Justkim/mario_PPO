@@ -9,6 +9,7 @@ import multiprocessing as mp
 import ray
 import mario_env
 import moving_dot_env
+import assault_env
 import gym
 from baselines import logger
 import cv2
@@ -17,14 +18,18 @@ import cv2
 @ray.remote
 class Simulator(object):
     def __init__(self,num_action_repeat):
-        self.env = moving_dot_env.make_train_0()
+        self.env = assault_env.make_train_0()
         self.env.reset()
         self.num_action_repeat=num_action_repeat
+        self.sum_rewards=0
 
     def step(self, action):
         for i in range(self.num_action_repeat):
             observations,rewards,dones,info=self.env.step(action)
+            self.sum_rewards+=rewards
             if dones:
+                self.total_reward=self.sum_rewards
+                self.sum_rewards=0
                 observations = self.reset()
         if flag.SHOW_GAME:
             self.env.render()
@@ -126,6 +131,7 @@ class Trainer():
                 #     print("The images are completely Equal")
                 # input()
                 decided_actions, predicted_values = self.new_model.step(np.array(current_observations))
+
                 # decided_actions2, predicted_values2 = self.new_model.step(np.array(observations))
                 # print(predicted_values1)
                 # print(predicted_values2)
@@ -141,6 +147,9 @@ class Trainer():
                 current_observations=np.array(current_observations)
                 rewards.append([each[1] for each in experiences])
                 dones.append([each[2] for each in experiences])
+
+
+
 
             decided_actions, predicted_values = self.new_model.step(np.array(current_observations))
             values.append(predicted_values)
@@ -202,11 +211,11 @@ class Trainer():
             policy_loss_avg_result=self.policy_loss_avg.result()
             value_loss_avg_result=self.value_loss_avg.result()
             entropy_avg_result=self.avg_entropy.result()
-            print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(train_step,epoch,
+            print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f}, mean_reward: {:.3f}".format(train_step,epoch,
                                                                          loss_avg_result,
                                                                         policy_loss_avg_result,
                                                                          value_loss_avg_result,
-                                                                         entropy_avg_result))
+                                                                         entropy_avg_result,np.average(rewards)))
             if flag.DEBUG:
                 print("policy", self.new_model.probs)
             if flag.TENSORBOARD_AVALAIBLE:
@@ -225,6 +234,8 @@ class Trainer():
                     logger.record_tabular("value loss",  value_loss_avg_result.numpy())
                     logger.record_tabular("policy loss", policy_loss_avg_result.numpy())
                     logger.record_tabular("entropy", entropy_avg_result.numpy())
+                    logger.record_tabular("mean reward", np.average(rewards))
+
                    # logger.record_tabular("policy", self.new_model.dist.numpy())
                     logger.dump_tabular()
 
@@ -316,7 +327,7 @@ class Trainer():
             clipped_value_loss = tf.square(clipped_value - tf.cast(returns, dtype="float64"))
             value_loss = tf.reduce_mean(tf.maximum(value_loss, clipped_value_loss))
         else:
-            value_loss = tf.reduce_mean(value_loss)
+            value_loss = tf.reduce_mean(value_loss) /2
 
         negative_log_p = self.negative_log_p_object(actions, self.new_model.policy)
 
@@ -335,7 +346,7 @@ class Trainer():
         self.old_values=predicted_value
         policy_loss = advantages * ratio
         clipped_policy_loss = advantages * tf.clip_by_value(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range)
-        selected_policy_loss = -tf.reduce_mean(tf.minimum(policy_loss, clipped_policy_loss))
+        selected_policy_loss = -1*tf.reduce_mean(tf.minimum(policy_loss, clipped_policy_loss))
         entropy = tf.reduce_mean(self.new_model.dist.entropy())
         #value_coef_tensor = tf.convert_to_tensor(self.value_coef, dtype="float64")
         loss = selected_policy_loss + (self.value_coef * value_loss) - (self.entropy_coef * entropy)
