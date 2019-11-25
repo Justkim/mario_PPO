@@ -58,7 +58,7 @@ class PreprocessFrame(gym.ObservationWrapper):
         frame = np.squeeze(frame, axis=2)
         frame=frame/255
 
-       
+
         # if flag.DEBUG:
         #cv2.imshow("frame",frame)
         #cv2.waitKey(0)

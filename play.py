@@ -12,6 +12,15 @@ class Player:
         while True:
             predicted_action, value = self.model.step(np.expand_dims(self.current_observation,0))
             self.current_observation,rew,info,done=self.env.step(predicted_action)
+            print("reward",rew)
+            if predicted_action==1:
+                print("action choosen was DOWN")
+            elif predicted_action==2:
+                print("action choosen was RIGHT")
+            elif predicted_action==3:
+                print("action choosen was UP")
+            elif predicted_action==4:
+                print("action choosen was LEFT")
             self.env.render()
 
 
