@@ -36,9 +36,8 @@ class Simulator(object):
 
 class Trainer():
     def __init__(self,num_training_steps,num_env,num_game_steps,num_epoch,
-                 learning_rate,discount_factor,env,num_action,
+                 learning_rate,discount_factor,num_action,
                  value_coef,clip_range,save_interval,log_interval,entropy_coef,lam,mini_batch_size,num_action_repeat):
-        self.envs=env
         self.training_steps=num_training_steps
         self.num_epoch=num_epoch
         self.learning_rate=learning_rate
