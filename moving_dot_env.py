@@ -1,4 +1,4 @@
-import gym_moving_dot
+
 
 # Part taken from adborghi fantastic implementation
 # https://github.com/aborghi/retro_contest_agent/blob/master/fastlearner/ppo2ttifrutti_sonic_env.py
@@ -13,7 +13,7 @@ import flag
 import collections
 import collections
 from collections import deque
-
+import gym_moving_dot
 from baselines.common.distributions import make_pdtype
 
 
@@ -101,6 +101,7 @@ class AllowBacktracking(gym.Wrapper):
 
     def step(self, action):  # pylint: disable=E0202
         obs, rew, done, info = self.env.step(action)
+        print(info)
         # print("rew",rew)
         # self._cur_x += rew
         # rew = max(0, self._cur_x - self._max_x)
@@ -268,21 +269,7 @@ def make_test():
 
 
 
-
-
-# for i in range(0,80):
-#
-#     new_env.step(2)
-#     new_env.render()
-#
-#     time.sleep(0.05)
-
-#
-# while True:
-#    frame=[]
-#    a,b,c,d=new_env.step(6)
-#    print("reward is",b)
-#    # new_env.step(3)
+   # new_env.step(3)
 #    # new_env.step(1)
 #    # new_env.step(5)
 #    # a,b,c,d=new_env.step(6)

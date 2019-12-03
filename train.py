@@ -52,7 +52,7 @@ class Trainer():
         self.mini_batch_size=mini_batch_size
         self.num_action=num_action
         # self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
-        self.optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.learning_rate)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
         assert self.batch_size % self.mini_batch_size == 0
         self.mini_batch_num=int(self.batch_size / self.mini_batch_size)
         self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -82,8 +82,8 @@ class Trainer():
 
     def collect_experiance_and_train(self):
 
-        self.new_model=Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
-        self.old_model = Model(self.num_action, self.value_coef, self.entropy_coef, self.clip_range)
+        self.new_model=Model(self.num_action)
+        self.old_model = Model(self.num_action)
         self.old_model.set_weights(self.new_model.get_weights())
         if flag.LOAD:
             self.new_model.load_weights('./models/step760-20191106-153400/train') #check this put
@@ -100,21 +100,19 @@ class Trainer():
         for i in range(self.num_env):
             current_observations.append(ray.get(returned_observations[i]))
 
-
-
         for train_step in range(self.training_steps):
-            self.loss_avg = tf.keras.metrics.Mean()
-            self.policy_loss_avg = tf.keras.metrics.Mean()
-            self.value_loss_avg = tf.keras.metrics.Mean()
-            self.avg_entropy = tf.keras.metrics.Mean()
+
+            loss_avg = tf.keras.metrics.Mean()
+            policy_loss_avg = tf.keras.metrics.Mean()
+            value_loss_avg = tf.keras.metrics.Mean()
+            entropy_avg = tf.keras.metrics.Mean()
 
             observations=[]
             rewards=[]
             dones=[]
             values=[]
             actions=[]
-            experiences = []
-            total_experiances=[]
+
             for game_step in range(self.num_game_steps):
                 returned_objects = []
                 observations.extend(current_observations)
@@ -124,6 +122,7 @@ class Trainer():
                 # if cv2.countNonZero(difference) == 0 :
                 #     print("The images are completely Equal")
                 # input()
+
                 decided_actions, predicted_values = self.new_model.step(np.array(current_observations))
                 # decided_actions2, predicted_values2 = self.new_model.step(np.array(observations))
                 # print(predicted_values1)
@@ -140,9 +139,11 @@ class Trainer():
                 current_observations=np.array(current_observations)
                 rewards.append([each[1] for each in experiences])
                 dones.append([each[2] for each in experiences])
-
+            # next state value, required for computing advantages
             decided_actions, predicted_values = self.new_model.step(np.array(current_observations))
             values.append(predicted_values)
+
+            # convert lists to numpy arrays
             observations_array=np.array(observations)
             rewards_array = np.array(rewards)
             dones_array = np.array(dones)
@@ -150,57 +151,40 @@ class Trainer():
             actions_array = np.array(actions)
 
             advantages_array,returns_array=self.compute_advantage(rewards_array,values_array,dones_array)
-
-            # values_array = values_array[:-1,:]
-
-            # print(values_array.shape)
-            # print("input observations shape", observations_array.shape)
-            # print("input rewards shape", rewards_array.shape)
-            # print("input actions shape", actions_array.shape)
-            # print("input advantages shape", advantages_array.shape)
-            # print("values shape", values_array.shape)
-            # values_array=values_array.flatten(0)
-            # returns_array = returns_array.flatten()
-
-            # print("input observations shape", observations_array.shape)
-            # print("input rewards shape", rewards_array.shape)
-            # print("input actions shape", actions_array.shape)
-            # print("input advantages shape", advantages_array.shape)
-            # print("values shape", values_array.shape)
-            values_array=values_array[:-1]
             values_array=values_array.flatten()
-            # print("total values from steps",values_array)
+
             if flag.DEBUG:
                 print("all actions are",actions)
 
-            # actions_array=np.swapaxes(actions_array,0,1)
             random_indexes=np.arange(self.batch_size)
             np.random.shuffle(random_indexes)
 
             for epoch in range(0,self.num_epoch):
                 # print("----------------next epoch----------------")
+
                 for n in range(0,self.mini_batch_num):
                     # print("----------------next mini batch-------------")
                     start_index=n*self.mini_batch_size
                     index_slice=random_indexes[start_index:start_index+self.mini_batch_size]
                     if flag.DEBUG:
-                        print("indexed choosen are:",index_slice)
+                        print("indexed chosen are:",index_slice)
+
                     experience_slice=(arr[index_slice] for arr in (observations_array,returns_array,values_array,actions_array,
                                                                    advantages_array))
                     last_weights = self.new_model.get_weights()
                     loss, policy_loss, value_loss, entropy=self.train_model(*experience_slice)
                     self.old_model.set_weights(last_weights)
-                    self.loss_avg(loss)
-                    self.policy_loss_avg(policy_loss)
-                    self.value_loss_avg(value_loss)
-                    self.avg_entropy(entropy)
+                    loss_avg(loss)
+                    policy_loss_avg(policy_loss)
+                    value_loss_avg(value_loss)
+                    entropy_avg(entropy)
             # print("----------------next training step--------------")
 
 
-            loss_avg_result=self.loss_avg.result()
-            policy_loss_avg_result=self.policy_loss_avg.result()
-            value_loss_avg_result=self.value_loss_avg.result()
-            entropy_avg_result=self.avg_entropy.result()
+            loss_avg_result=loss_avg.result()
+            policy_loss_avg_result=policy_loss_avg.result()
+            value_loss_avg_result=value_loss_avg.result()
+            entropy_avg_result=entropy_avg.result()
             print("training step {:03d}, Epoch {:03d}: Loss: {:.3f}, policy loss: {:.3f}, value loss: {:.3f}, entopy: {:.3f} ".format(train_step,epoch,
                                                                          loss_avg_result,
                                                                         policy_loss_avg_result,
@@ -224,13 +208,14 @@ class Trainer():
                     logger.record_tabular("value loss",  value_loss_avg_result.numpy())
                     logger.record_tabular("policy loss", policy_loss_avg_result.numpy())
                     logger.record_tabular("entropy", entropy_avg_result.numpy())
+                    logger.record_tabular("rewards avg", np.average(rewards))
                    # logger.record_tabular("policy", self.new_model.dist.numpy())
                     logger.dump_tabular()
 
-            self.loss_avg.reset_states()
-            self.policy_loss_avg.reset_states()
-            self.value_loss_avg.reset_states()
-            self.avg_entropy.reset_states()
+            loss_avg.reset_states()
+            policy_loss_avg.reset_states()
+            value_loss_avg.reset_states()
+            entropy_avg.reset_states()
 
             if train_step % self.save_interval==0:
                 self.new_model.save_weights('./models/step'+str(train_step)+'-'+self.current_time+'/'+'train')
@@ -241,25 +226,24 @@ class Trainer():
             print("---------computing advantage---------")
             print("rewards are",rewards)
             print("values from steps are",values)
-        # print("rewards are",rewards)
+
         advantages = []
         last_advantage = 0
         for step in reversed(range(self.num_game_steps)):
             is_there_a_next_state = 1.0 - dones[step]
-            delta = rewards[step] + is_there_a_next_state * self.discount_factor * values[step + 1] - values[step]
+            delta = rewards[step] + (is_there_a_next_state * self.discount_factor * values[step + 1]) - values[step]
             if flag.USE_GAE:
                     advantage = last_advantage = delta + self.discount_factor * \
                                                  self.lam * is_there_a_next_state * last_advantage
                     advantages.append(advantage)
             else:
                     advantages.append(delta)
-        if flag.USE_GAE:
-            advantages.reverse()
+        advantages.reverse()
 
         advantages=np.array(advantages)
         advantages = advantages.flatten()
         values=values[:-1]
-        returns=advantages+values.flatten(0)
+        returns=advantages+values.flatten()
         if flag.DEBUG:
             print("all advantages are",advantages)
             print("all returns are",returns)
@@ -298,12 +282,6 @@ class Trainer():
             print("values from forward pass",predicted_value)
             print("returns",returns)
 
-
-        # print("----------------------------------")
-        # predicted_value=values
-        # if flag.DEBUG:
-        #     print("policy",policy)
-        #     print("predicted value",predicted_value)
         self.old_model.forward_pass(input_observations)
         old_negative_logp=self.negative_log_p_object(actions,self.old_model.policy)
         #  clipped_vf= old_value + tf.clip_by_value(train_model.vf - old_value , -clip_range , clip_range)

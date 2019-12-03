@@ -9,15 +9,15 @@ def make_conv_layer(filters,kernel_size,channels_order,name,stride_size=1):
     #   scale=2., mode="fan_in", distribution="uniform"))
     return tf.keras.layers.Conv2D(filters, kernel_size, strides=(stride_size, stride_size), activation='relu',
                                   data_format=channels_order,
-                                  name=name, kernel_initializer=tf.keras.initializers.glorot_normal())
+                                  name=name, kernel_initializer=tf.keras.initializers.he_normal())
 def make_dense_layer(units,name,activation=None):
     # return tf.keras.layers.Dense(units=units,activation=activation,name=name,kernel_initializer=tf.keras.initializers.VarianceScaling(
     #   scale=2., mode="fan_in", distribution="uniform"))
     return tf.keras.layers.Dense(units=units, activation=activation, name=name,
-                                 kernel_initializer=tf.keras.initializers.glorot_normal())
+                                 kernel_initializer=tf.keras.initializers.he_normal())
 
 class Model(tf.keras.Model):
-    def __init__(self,num_action,value_coef,entropy_coef,clip_range):
+    def __init__(self,num_action):
         super(Model,self).__init__(name='')
         tf.keras.backend.set_floatx('float64')
         self.num_action=num_action
@@ -72,6 +72,9 @@ class Model(tf.keras.Model):
         self.dist = tfp.distributions.Categorical(self.policy)
         #self.action=self.dist.sample()
         self.probs=(self.softmax_layer(self.policy)).numpy()
+        if flag.PLAY:
+            print("entropy is",self.dist.entropy())
+            print("probs are", self.probs)
         randoms= np.expand_dims(np.random.rand(self.probs.shape[0]),axis=1)
         self.action=(self.probs.cumsum(axis=1)>randoms).argmax(axis=1)
         return self.action,self.predicted_value
