@@ -37,7 +37,7 @@ class Simulator(object):
 class Trainer():
     def __init__(self,num_training_steps,num_env,num_game_steps,num_epoch,
                  learning_rate,discount_factor,num_action,
-                 value_coef,clip_range,save_interval,log_interval,entropy_coef,lam,mini_batch_size,num_action_repeat):
+                 value_coef,clip_range,save_interval,log_interval,entropy_coef,lam,mini_batch_size,num_action_repeat,load_path):
         self.training_steps=num_training_steps
         self.num_epoch=num_epoch
         self.learning_rate=learning_rate
@@ -75,6 +75,7 @@ class Trainer():
         self.value_coef = tf.cast(value_coef, dtype="float64")
         self.entropy_coef = tf.cast(entropy_coef, dtype="float64")
         self.first_train = True
+        self.load_path=load_path
 
     if flag.ON_COLAB:
         tf.enable_eager_execution()
@@ -86,7 +87,7 @@ class Trainer():
         self.old_model = Model(self.num_action)
         self.old_model.set_weights(self.new_model.get_weights())
         if flag.LOAD:
-            self.new_model.load_weights('./models/step760-20191106-153400/train') #check this put
+            self.new_model.load_weights(self.load_path) #check this put
             print("loaded model weigths from checkpoint")
 
         ray.init()
