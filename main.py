@@ -10,15 +10,15 @@ flag.Load = False
 
 
 parser=argparse.ArgumentParser(description="train parser")
-parser.add_argument("--num_env", default=1, type=int, help="This is the number of workers")
-parser.add_argument("--game_steps", default=16, type=int, help="This is the number of steps in game "
+parser.add_argument("--num_env", default=12, type=int, help="This is the number of workers")
+parser.add_argument("--game_steps", default=128, type=int, help="This is the number of steps in game "
                                                                "for every training step")
 parser.add_argument("--num_epoch", default=4, type=int, help="This is the number of epoches")
-parser.add_argument("--mini_batch", default=16, type=int, help="This is mini batch size ")
-parser.add_argument("--lr", default=1e-4, type=float, help="This is optimizer learning rate")
+parser.add_argument("--mini_batch", default=8, type=int, help="This is mini batch size ")
+parser.add_argument("--lr", default=2e-4, type=float, help="This is optimizer learning rate")
 parser.add_argument("--gamma", default=0.99, type=float, help="This is discount factor")
 parser.add_argument("--lambda_gae", default=0.95, type=float, help="This is lambda in GAE")
-parser.add_argument("--clip_range", default=0.2, type=float, help="This is clip range for PPO")
+parser.add_argument("--clip_range", default=0.1, type=float, help="This is clip range for PPO")
 parser.add_argument("--value_coef", default=0.5, type=float, help="This is value coef")
 parser.add_argument("--ent_coef", default=0.05, type=float, help="This is entropy coef")
 parser.add_argument("--log_int", default=10, type=int, help="This is log interval")
@@ -34,7 +34,6 @@ if args.play:
     flag.PLAY=True
 if args.load:
     flag.LOAD=True
-
 
 if flag.TRAIN:
     new_trainer = Trainer(num_training_steps=20000, num_env=args.num_env, num_game_steps=args.game_steps, num_epoch=args.num_epoch, learning_rate=args.lr
