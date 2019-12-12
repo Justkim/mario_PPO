@@ -75,7 +75,7 @@ class Model(tf.keras.Model):
         if flag.PLAY:
             print("entropy is",self.dist.entropy())
             print("probs are", self.probs)
-        self.action=np.zeros(5)
+        self.action=tf.argmax(self.probs)
 
         # randoms= tf.random.uniform(shape=(self.probs.shape[0],1),dtype=tf.float64)
         # self.action=tf.argmax(tf.math.greater(tf.cumsum(self.probs,axis=1),randoms),axis=1)
