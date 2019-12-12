@@ -71,12 +71,14 @@ class Model(tf.keras.Model):
         #self.policy=tf.maximum(self.policy_layer(x),1e-13)
         self.dist = tfp.distributions.Categorical(self.policy)
         #self.action=self.dist.sample()
-        self.probs=(self.softmax_layer(self.policy)).numpy()
+        self.probs=(self.softmax_layer(self.policy))
         if flag.PLAY:
             print("entropy is",self.dist.entropy())
             print("probs are", self.probs)
-        randoms= np.expand_dims(np.random.rand(self.probs.shape[0]),axis=1)
-        self.action=(self.probs.cumsum(axis=1)>randoms).argmax(axis=1)
+        self.action=np.zeros((5))
+
+        # randoms= tf.random.uniform(shape=(self.probs.shape[0],1),dtype=tf.float64)
+        # self.action=tf.argmax(tf.math.greater(tf.cumsum(self.probs,axis=1),randoms),axis=1)
         return self.action,self.predicted_value
 
 

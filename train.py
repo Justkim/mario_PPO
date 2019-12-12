@@ -12,7 +12,7 @@ import moving_dot_env
 import gym
 from baselines import logger
 import cv2
-
+import time
 
 @ray.remote
 class Simulator(object):
@@ -114,6 +114,8 @@ class Trainer():
             values=[]
             actions=[]
 
+            start=time.time()
+
             for game_step in range(self.num_game_steps):
                 returned_objects = []
                 observations.extend(current_observations)
@@ -159,7 +161,10 @@ class Trainer():
 
             random_indexes=np.arange(self.batch_size)
             np.random.shuffle(random_indexes)
+            end=time.time()
 
+            print("time elapsed in game steps",end-start)
+            start=time.time()
             for epoch in range(0,self.num_epoch):
                 # print("----------------next epoch----------------")
 
@@ -181,7 +186,8 @@ class Trainer():
                     entropy_avg(entropy)
             # print("----------------next training step--------------")
 
-
+            end=time.time()
+            print("epoch time",end-start)
             loss_avg_result=loss_avg.result()
             policy_loss_avg_result=policy_loss_avg.result()
             value_loss_avg_result=value_loss_avg.result()
@@ -250,7 +256,7 @@ class Trainer():
             print("all returns are",returns)
         return advantages,returns
 
-
+    @tf.function
     def train_model(self,observations_array,returns_array,values_array,actions_array,advantages_array):
 
             if flag.USE_STANDARD_ADV:
